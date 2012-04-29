@@ -4,15 +4,15 @@ Version:    7.21.3
 Release:    1
 Group:      Applications/Internet
 License:    MIT
-URL:        http://curl.haxx.se/
-Source0:    http://curl.haxx.se/download/%{name}-%{version}.tar.bz2
+#URL:        http://curl.haxx.se/
+#Source0:    http://curl.haxx.se/download/%{name}-%{version}.tar.bz2
+Source0:    %{name}-%{version}.tar.bz2
 
-BuildRequires:	pkgconfig(libcares)
 BuildRequires:  pkgconfig(openssl)
 BuildRequires:  pkgconfig(libidn)
 BuildRequires:  pkgconfig(nss)
 BuildRequires:  pkgconfig(zlib)
-BuildRequires:  pkgconfig
+BuildRequires:  pkgconfig(libcares)
 Provides:   webclient
 
 
@@ -53,10 +53,21 @@ use cURL's capabilities internally.
 
 
 %prep
-%setup -q -n %{name}-%{version}
+%setup -q
+
 
 %build
-%reconfigure --disable-dependency-tracking --disable-ipv6 --with-lber-lib=lber --enable-manual --enable-versioned-symbols --enable-ares --with-ca-path=/etc/ssl/certs --without-gnutls --without-nss --with-openssl
+
+export CPPFLAGS="$(pkg-config --cflags nss) -DHAVE_PK11_CREATEGENERICOBJECT"
+
+%reconfigure --without-nss --without-gnutls --with-openssl --disable-ipv6 \
+--with-ca-path=/etc/ssl/certs \
+--with-libidn \
+--with-lber-lib=lber \
+--enable-manual --enable-versioned-symbols --enable-ares --enable-debug --enable-curldebug \
+--disable-static
+
+#--with-ca-bundle=%{_sysconfdir}/pki/tls/certs/ca-bundle.crt 
 
 sed -i -e 's,-L/usr/lib ,,g;s,-L/usr/lib64 ,,g;s,-L/usr/lib$,,g;s,-L/usr/lib64$,,g' \
 Makefile libcurl.pc
@@ -68,16 +79,20 @@ sed -i \
 make %{?_smp_mflags}
 
 %install
-%make_install
+rm -rf %{buildroot}
 
+rm -rf $RPM_BUILD_ROOT
+
+make DESTDIR=$RPM_BUILD_ROOT INSTALL="%{__install} -p" install
+
+rm -f ${RPM_BUILD_ROOT}%{_libdir}/libcurl.la
 install -d $RPM_BUILD_ROOT/%{_datadir}/aclocal
 install -m 644 docs/libcurl/libcurl.m4 $RPM_BUILD_ROOT/%{_datadir}/aclocal
 
 
 # don't need curl's copy of the certs; use openssl's
 find ${RPM_BUILD_ROOT} -name ca-bundle.crt -exec rm -f '{}' \;
-
-%remove_docs
+rm -rf ${RPM_BUILD_ROOT}/usr/share/man
 
 %post -n libcurl -p /sbin/ldconfig
 
