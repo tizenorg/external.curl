@@ -7,6 +7,7 @@ License:    MIT
 #URL:        http://curl.haxx.se/
 #Source0:    http://curl.haxx.se/download/%{name}-%{version}.tar.bz2
 Source0:    %{name}-%{version}.tar.bz2
+Source1001: packaging/curl.manifest 
 
 BuildRequires:  pkgconfig(openssl)
 BuildRequires:  pkgconfig(libidn)
@@ -57,6 +58,7 @@ use cURL's capabilities internally.
 
 
 %build
+cp %{SOURCE1001} .
 
 export CPPFLAGS="$(pkg-config --cflags nss) -DHAVE_PK11_CREATEGENERICOBJECT"
 
@@ -99,12 +101,15 @@ rm -rf ${RPM_BUILD_ROOT}/usr/share/man
 %postun -n libcurl -p /sbin/ldconfig
 
 %files
+%manifest curl.manifest
 %{_bindir}/curl
 
 %files -n libcurl
+%manifest curl.manifest
 %{_libdir}/libcurl.so.*
 
 %files -n libcurl-devel
+%manifest curl.manifest
 %{_bindir}/curl-config*
 %{_includedir}/curl
 %{_libdir}/*.so
