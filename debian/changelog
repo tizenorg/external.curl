@@ -1,3 +1,11 @@
+curl (7.21.3-7) unstable; urgency=low
+
+  * Updated tag value for tizen 2.0 build
+  * Git: external/curl
+  * Tag: curl_7.21.3-7
+
+ -- Taeksu Shin <taeksu.shin@samsung.com>  Thu, 23 Aug 2012 13:54:02 +0900
+
 curl (7.21.3-6slp2) unstable; urgency=low
 
   * Renamed tag

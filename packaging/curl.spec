@@ -1,7 +1,7 @@
 Name:       curl
 Summary:    A utility for getting files from remote servers (FTP, HTTP, and others)
 Version:    7.21.3
-Release:    1
+Release:    7
 Group:      Applications/Internet
 License:    MIT
 #URL:        http://curl.haxx.se/
