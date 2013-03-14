@@ -1,51 +1,51 @@
-Curl and libcurl 7.21.3
+Curl and libcurl 7.28.1
 
- Public curl releases:         119
- Command line options:         143
- curl_easy_setopt() options:   185
+ Public curl releases:         130
+ Command line options:         152
+ curl_easy_setopt() options:   199
  Public functions in libcurl:  58
  Known libcurl bindings:       39
- Contributors:                 827
+ Contributors:                 979
 
 This release includes the following changes:
 
- o Added --noconfigure switch to testcurl.pl
- o Added --xattr option
- o Added CURLOPT_RESOLVE and --resolve
- o Added CURLAUTH_ONLY
- o Added version-check.pl to the examples dir
+ o metalink/md5: Use CommonCrypto on Apple operating systems
+ o href_extractor: new example code extracting href elements
+ o NSS can be used for metalink hashing [13]
 
 This release includes the following bugfixes:
 
- o check for libcurl features for some command line options
- o Curl_setopt: disallow CURLOPT_USE_SSL without SSL support
- o http_chunks: remove debug output
- o URL-parsing: consider ? a divider
- o SSH: avoid using the libssh2_ prefix
- o SSH: use libssh2_session_handshake() to work on win64
- o ftp: prevent server from hanging on closed data connection when stopping
-   a transfer before the end of the full transfer (ranges)
- o LDAP: detect non-binary attributes properly
- o ftp: treat server's response 421 as CURLE_OPERATION_TIMEDOUT
- o gnutls->handshake: improved timeout handling
- o security: Pass the right parameter to init
- o krb5: Use GSS_ERROR to check for error
- o TFTP: resend the correct data
- o configure: fix autoconf 2.68 warning: no AC_LANG_SOURCE call detected
- o GnuTLS: now detects socket errors on Windows
- o symbols-in-versions: updated en masse
- o added a couple examples that were missing from the tar ball
- o Curl_send/recv_plain: return errno on failure
- o Curl_wait_for_resolv (for c-ares): correct timeout
- o ossl_connect_common: detect connection re-use
- o configure: Prevent link errors with --librtmp
- o openldap: use remote port in URL passed to ldap_init_fd()
- o url: provide dead_connection flag in Curl_handler::disconnect
- o lots of compiler warning fixes
- o ssh: fix a download resume point calculation
- o fix getinfo CURLINFO_LOCAL* for reused connections
- o multi: the returned running handles conuter could turn negative
- o multi: only ever consider pipelining for connections doing HTTP(S)
+ o Fix broken libmetalink-aware OpenSSL build
+ o gnutls: fix the error is fatal logic [1]
+ o darwinssl: un-broke iOS build, fix error on server disconnect
+ o asyn-ares: restore functionality with c-ares < 1.6.1 [2]
+ o tlsauthtype: deal with the string case insensitively [3]
+ o Fixed MSVC libssh2 static build
+ o evhiperfifo: fix the pointer passed to WRITEDATA [6]
+ o BUGS: fix the bug tracker URL [4]
+ o winbuild: Use machine type of development environment
+ o FTP: prevent the multi interface from blocking [5]
+ o uniformly use AM_CPPFLAGS, avoid deprecated INCLUDES
+ o httpcustomheader.c: free the headers after use
+ o fix >2000 bytes POST over NTLM-using proxy [7]
+ o redirects to URLs with fragments [8]
+ o don't send '#' fragments when using proxy [9]
+ o OpenSSL: show full issuer string [10]
+ o fix HTTP auth regression [11]
+ o CURLOPT_SSL_VERIFYHOST: stop supporting the 1 value [12]
+ o ftp: EPSV-disable fix over SOCKS [14]
+ o Digest: Add microseconds into nounce calculation [15]
+ o SCP/SFTP: improve error code used for send failures
+ o SSL: Several SSL-backend related fixes
+ o removed the notorious "additional stuff not fine" debug output
+ o OpenSSL: Disable SSL/TLS compression - avoid the "CRIME" attack
+ o FILE: Make upload-writes unbuffered
+ o custom memory callbacks failure with HTTP proxy (and more) [16]
+ o TFTP: handle resends
+ o autoconf: don't force-disable compiler debug option
+ o winbuild: Fix PDB file output [17]
+ o test2032: spurious failure caused by premature termination [18]
+ o memory leak: CURLOPT_RESOLVE with multi interface [19]
 
 This release includes the following known bugs:
 
@@ -54,8 +54,34 @@ This release includes the following known bugs:
 This release would not have looked like this without help, code, reports and
 advice from friends like these:
 
- Dan Fandrich, Guenter Knauf, Pat Ray, Hongli Lai, Kamil Dudka,
- Stefan Tomanek, Alfred Gebert, Yang Tse, Julien Chaffraix, Adam Light,
- Rutger Hofman, Matthias Bolte, Heinrich Ko, Dmitri Shubin
+ Guenter Knauf, Alessandro Ghedini, Nick Zitzmann, Michal Kowalczyk,
+ Jeff Connelly, Oscar Norlander, Guido Berhoerster, Marc Hoersken,
+ Dave Reisner, Jan Ehrhardt, John Suprock, Alessandro Ghedini,
+ Lars Buitinck, Anton Malov, Sergei Nikulov, Patrick Monnerat,
+ Gabriel Sjoberg, Oscar Koeroo, Fabian Keil, Johnny Luong, Cristian Rodríguez,
+ Sebastian Rasmussen, Mark Snelling, Christian Vogt, Marcin Adamski,
+ Ajit Dhumale, Alex Gruz
 
         Thanks! (and sorry if I forgot to mention someone)
+
+References to bug reports and discussions on issues:
+
+ [1] = http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=690551
+ [2] = http://curl.haxx.se/bug/view.cgi?id=3577710
+ [3] = http://curl.haxx.se/bug/view.cgi?id=3578418
+ [4] = http://curl.haxx.se/bug/view.cgi?id=3582408
+ [5] = http://curl.haxx.se/bug/view.cgi?id=3579064
+ [6] = http://curl.haxx.se/bug/view.cgi?id=3582407
+ [7] = http://curl.haxx.se/bug/view.cgi?id=3582321
+ [8] = http://curl.haxx.se/bug/view.cgi?id=3581898
+ [9] = http://curl.haxx.se/bug/view.cgi?id=3579813
+ [10] = http://curl.haxx.se/bug/view.cgi?id=3579286
+ [11] = http://curl.haxx.se/bug/view.cgi?id=3582718
+ [12] = http://daniel.haxx.se/blog/2012/10/25/libcurl-claimed-to-be-dangerous/
+ [13] = http://curl.haxx.se/bug/view.cgi?id=3578163
+ [14] = http://curl.haxx.se/bug/view.cgi?id=3586338
+ [15] = https://github.com/bagder/curl/pull/50
+ [16] = http://curl.haxx.se/mail/lib-2012-11/0125.html
+ [17] = http://curl.haxx.se/bug/view.cgi?id=3586741
+ [18] = http://curl.haxx.se/mail/lib-2012-11/0095.html
+ [19] = http://curl.haxx.se/bug/view.cgi?id=3575448

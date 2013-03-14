@@ -1,26 +1,76 @@
-curl (7.21.3-7) unstable; urgency=low
+curl (7.28.1-1) unstable; urgency=low
 
-  * Updated tag value for tizen 2.0 build
+  * Upgraded version to 7.28.1
+  * Disabled TLSv1.1/1.2 for backward compatibility with old SSL server
   * Git: external/curl
-  * Tag: curl_7.21.3-7
+  * Tag: curl_7.28.1-1
 
- -- Taeksu Shin <taeksu.shin@samsung.com>  Thu, 23 Aug 2012 13:54:02 +0900
+ -- GangHeok Kim <gangheok.kim@samsung.com>  Wed, 20 Feb 2013 15:36:28 +0900
+
+curl (7.21.3-7slp2) unstable; urgency=low
+
+  * Enabled debug option to add debug symbol data in libcurl3 dbg package
+  * Git: slp/unmodified/curl
+  * Tag: curl_7.21.3-7slp2
+
+ -- Taeksu Shin <taeksu.shin@samsung.com>  Fri, 03 Feb 2012 15:35:16 +0900
 
 curl (7.21.3-6slp2) unstable; urgency=low
 
-  * Renamed tag
-  * Git: unmodified/curl
+  * Removed unused curl package (command line tool)
+  * Git: ssh://git@165.213.180.234:slp/unmodified/curl
   * Tag: curl_7.21.3-6slp2
 
- -- Taeksu Shin <taeksu.shin@samsung.com>  Thu, 15 Dec 2011 12:33:13 +0900
+ -- Taeksu Shin <taeksu.shin@samsung.com>  Wed, 30 Nov 2011 16:15:10 +0900
 
-curl (7.21.3-1tizen) unstable; urgency=low
+curl (7.21.3-5slp2) unstable; urgency=low
 
-  * Ported to Tizen
-  * Git: unmodified/curl
-  * Tag: curl_7.21.3-1tizen
+  * Remove docs, fix upgrade error
 
- -- Taeksu Shin <taeksu.shin@samsung.com>  Wed, 07 Dec 2011 11:14:43 +0900
+ -- Mike McCormack <mj.mccormack@samsung.com>  Wed, 16 Nov 2011 15:11:16 +0900
+
+curl (7.21.3-4slp2) unstable; urgency=low
+
+  * Disabled IPv6 feature to avoid AAAA(IPv6) DNS query
+  * Git: ssh://git@165.213.180.234:slp/unmodified/curl
+  * Tag: curl_7.21.3-4slp2
+
+ -- Taeksu Shin <taeksu.shin@samsung.com>  Mon, 14 Nov 2011 23:16:03 +0900
+
+curl (7.21.3-3slp2) unstable; urgency=low
+
+  * Enabled c-ares for DNS resolving
+  * Git: ssh://git@165.213.180.234:slp/unmodified/curl
+  * Tag: curl_7.21.3-3slp2
+
+ -- Taeksu Shin <taeksu.shin@samsung.com>  Thu, 10 Nov 2011 14:03:59 +0900
+
+curl (7.21.3-2slp2) unstable; urgency=low
+
+  * Removed libcurl3-gnutls dependency of libcurl3-dbg
+  * Git: ssh://git@165.213.180.234:slp/unmodified/curl
+  * Tag: curl_7.21.3-2slp2
+
+ -- Taeksu Shin <taeksu.shin@samsung.com>  Tue, 25 Oct 2011 16:48:25 +0900
+
+curl (7.21.3-1slp2+s2) unstable; urgency=low
+
+  * Drop gnutls and libnss builds
+
+ -- Mike McCormack <mj.mccormack@samsung.com>  Mon, 08 Aug 2011 19:39:40 +0900
+
+curl (7.21.3-1slp2+s1) unstable; urgency=low
+
+  * debian/control: remove libkrb5-dev and libldap2-dev dependencies
+    from devel packages.
+  * debian/rules: re-disable tests.
+  * debian/rules: workaround for broken dpkg-architecture in SLP's SB1
+  * Provide meta-package 'libcurl-dev' for transitional compatibility
+    with SLP packages.
+  * Git: ssh://git@165.213.180.234/slp/unmodified/curl
+  * Tag: curl_7.21.3-1slp2+s1
+
+ -- Rafal Krypa <r.krypa@samsung.com>  Thu, 10 Feb 2011 13:07:29 +0100
 
 curl (7.21.3-1) unstable; urgency=low
 
@@ -58,6 +108,60 @@ curl (7.21.2-2) unstable; urgency=low
 
  -- Ramakrishnan Muthukrishnan <rkrishnan@debian.org>  Tue, 30 Nov 2010 17:35:29 +0530
 
+curl (7.21.2-1slp2+s5) unstable; urgency=low
+
+  * New repository location
+  * Git: ssh://git@165.213.180.234/slp/unmodified/curl
+  * Tag: curl_7.21.2-1slp2+s5
+
+ -- Rafal Krypa <r.krypa@samsung.com>  Mon, 24 Jan 2011 14:54:39 +0100
+
+curl (7.21.2-1slp2+s4) unstable; urgency=low
+
+  * Add myself to maintainers.
+  * Use DH_OPTIONS to turn off building of packages 'libcurl3-gnutls'
+    and 'libcurl4-gnutls-dev'.
+  * Provide meta-package 'libcurl' for transitional compatibility with
+    SLP packages.
+  * Git: 165.213.180.234:/git/slp/unmodified/curl
+  * Tag: curl_7.21.2-1slp2+s4
+
+ -- Rafal Krypa <r.krypa@samsung.com>  Fri, 19 Nov 2010 16:40:01 +0900
+
+curl (7.21.2-1slp2+s3) unstable; urgency=low
+
+  * debian/rules: re-add dh_install call required to get any contents in
+    the packages.
+  * debian/rules: disable tests.
+  * debian/control: re-add build-dependency on quilt, remove build-
+    dependency on libgnutls-dev.
+  * Git: 165.213.180.234:/git/slp/unmodified/curl
+  * Tag: curl_7.21.2-1slp2+s3
+
+ -- Rafal Krypa <r.krypa@samsung.com>  Thu, 18 Nov 2010 20:55:17 +0900
+
+curl (7.21.2-1slp2+s2) unstable; urgency=low
+
+  * Fix for scratchbox-compatible libcurl package.
+  * Git: 165.213.180.234:/git/slp/unmodified/curl
+  * Tag: curl_7.21.2-1slp2+s2
+
+ -- Sanjeev BA <as2902.b@samsung.com>  Thu, 18 Nov 2010 16:37:38 +0900
+
+curl (7.21.2-1slp2+s1) unstable; urgency=low
+
+  [ Sanjeev BA ]
+  * Building version of curl from
+    http://packages.debian.org/source/squeeze/curl
+  * Added changelog entry
+  * Fix deb file install issue
+  * Commit for patch that fixes libcurl dependency
+
+  [ Karol Lewandowski ]
+  * Provide scratchbox-compatible libcurl package
+
+ -- Karol Lewandowski <k.lewandowsk@samsung.com>  Thu, 18 Nov 2010 18:03:07 +0900
+
 curl (7.21.2-1) unstable; urgency=low
 
   * New upstream release.
@@ -69,6 +173,32 @@ curl (7.21.1-1) unstable; urgency=low
   * New upstream release.
 
  -- Ramakrishnan Muthukrishnan <rkrishnan@debian.org>  Thu, 12 Aug 2010 08:20:48 +0530
+
+curl (7.21.0-1slp2+s3) unstable; urgency=low
+
+  * Apply new path for libcurl pkg name.
+  * Git: 165.213.180.234:/git/slp/unmodified/curl
+  * Tag: curl_7.21.0-1slp2+s3
+
+ -- Sanjeev BA <as2902.b@samsung.com>  Thu, 18 Nov 2010 16:37:38 +0900
+
+curl (7.21.0-1slp2+s2) unstable; urgency=low
+
+  * Fix install issues during debina file installation.
+  * Remove unavailable dev pkgs.
+  * Git: 165.213.180.234:/git/slp/unmodified/curl
+  * Tag: curl_7.21.0-1slp2+s2
+
+ -- Sanjeev BA <as2902.b@samsung.com>  Thu, 18 Nov 2010 15:37:13 +0900
+
+curl (7.21.0-1slp2+s1) unstable; urgency=low
+
+  * Make open source version build for arm.
+  * remove gnutls builds.
+  * Git: 165.213.180.234:/git/slp/unmodified/curl
+  * Tag: curl_7.21.0-1slp2+s1
+
+ -- Sanjeev BA <as2902.b@samsung.com>  Thu, 18 Nov 2010 14:48:50 +0900
 
 curl (7.21.0-1) unstable; urgency=low
 

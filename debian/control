@@ -1,8 +1,9 @@
 Source: curl
 Section: web
 Priority: optional
-Maintainer: Ramakrishnan Muthukrishnan <rkrishnan@debian.org>, Taeksu Shin <taeksu.shin@samsung.com>, Dongwook Lee <dwmax.lee@samsung.com>
+Maintainer: Taeksu Shin <taeksu.shin@samsung.com>, Dongwook Lee <dwmax.lee@samsung.com>
 Uploaders: Taeksu Shin <taeksu.shin@samsung.com>, Dongwook Lee <dwmax.lee@samsung.com>
+X-Original-Maintainer: Ramakrishnan Muthukrishnan <rkrishnan@debian.org>
 Build-Depends: debhelper (>> 5), autoconf, libtool, automake1.9, binutils (>= 2.14.90.0.7), libssl-dev, zlib1g-dev, libidn11-dev, groff-base, libc-ares-dev
 Build-Conflicts: autoconf2.13, automake1.4
 Standards-Version: 3.9.1

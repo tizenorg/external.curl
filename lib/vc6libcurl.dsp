@@ -150,6 +150,22 @@ LIB32=link.exe -lib
 # PROP Default_Filter ""
 # Begin Source File
 
+SOURCE=.\amigaos.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\asyn-ares.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\asyn-thread.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\axtls.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\base64.c
 # End Source File
 # Begin Source File
@@ -170,6 +186,10 @@ SOURCE=.\curl_addrinfo.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\curl_darwinssl.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\curl_fnmatch.c
 # End Source File
 # Begin Source File
@@ -178,7 +198,31 @@ SOURCE=.\curl_gethostname.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\curl_gssapi.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\curl_memrchr.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_multibyte.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_ntlm.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_ntlm_core.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_ntlm_msgs.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_ntlm_wb.c
 # End Source File
 # Begin Source File
 
@@ -190,11 +234,23 @@ SOURCE=.\curl_rtmp.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\curl_sasl.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_schannel.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\curl_sspi.c
 # End Source File
 # Begin Source File
 
 SOURCE=.\curl_threads.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\cyassl.c
 # End Source File
 # Begin Source File
 
@@ -254,11 +310,11 @@ SOURCE=.\hmac.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\hostares.c
+SOURCE=.\hostasyn.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\hostasyn.c
+SOURCE=.\hostcheck.c
 # End Source File
 # Begin Source File
 
@@ -278,10 +334,6 @@ SOURCE=.\hostsyn.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\hostthre.c
-# End Source File
-# Begin Source File
-
 SOURCE=.\http.c
 # End Source File
 # Begin Source File
@@ -298,7 +350,15 @@ SOURCE=.\http_negotiate.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\http_ntlm.c
+SOURCE=.\http_negotiate_sspi.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\http_proxy.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\idn_win32.c
 # End Source File
 # Begin Source File
 
@@ -355,6 +415,10 @@ SOURCE=.\multi.c
 # Begin Source File
 
 SOURCE=.\netrc.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\non-ascii.c
 # End Source File
 # Begin Source File
 
@@ -514,7 +578,19 @@ SOURCE=.\wildcard.c
 # PROP Default_Filter ""
 # Begin Source File
 
+SOURCE=.\amigaos.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\arpa_telnet.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\asyn.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\axtls.h
 # End Source File
 # Begin Source File
 
@@ -542,11 +618,19 @@ SOURCE=.\curl_base64.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\curl_darwinssl.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\curl_fnmatch.h
 # End Source File
 # Begin Source File
 
 SOURCE=.\curl_gethostname.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_gssapi.h
 # End Source File
 # Begin Source File
 
@@ -574,11 +658,39 @@ SOURCE=.\curl_memrchr.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\curl_multibyte.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_ntlm_core.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_ntlm.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_ntlm_msgs.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_ntlm_wb.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\curl_rand.h
 # End Source File
 # Begin Source File
 
 SOURCE=.\curl_rtmp.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_sasl.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\curl_schannel.h
 # End Source File
 # Begin Source File
 
@@ -591,6 +703,10 @@ SOURCE=.\curl_threads.h
 # Begin Source File
 
 SOURCE=.\curlx.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\cyassl.h
 # End Source File
 # Begin Source File
 
@@ -642,6 +758,10 @@ SOURCE=.\hash.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\hostcheck.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\hostip.h
 # End Source File
 # Begin Source File
@@ -662,7 +782,7 @@ SOURCE=.\http_negotiate.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\http_ntlm.h
+SOURCE=.\http_proxy.h
 # End Source File
 # Begin Source File
 
@@ -699,6 +819,10 @@ SOURCE=.\multiif.h
 # Begin Source File
 
 SOURCE=.\netrc.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\non-ascii.h
 # End Source File
 # Begin Source File
 

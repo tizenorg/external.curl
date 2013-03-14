@@ -5,7 +5,7 @@
 #                            | (__| |_| |  _ <| |___
 #                             \___|\___/|_| \_\_____|
 #
-# Copyright (C) 1998 - 2009, Daniel Stenberg, <daniel@haxx.se>, et al.
+# Copyright (C) 1998 - 2012, Daniel Stenberg, <daniel@haxx.se>, et al.
 #
 # This software is licensed as described in the file COPYING, which
 # you should have received as part of this distribution. The terms
@@ -35,23 +35,27 @@ AUTOMAKE_OPTIONS = foreign nostdinc
 # $(top_srcdir)/ares is for in-tree c-ares's external include files
 
 if USE_EMBEDDED_ARES
-INCLUDES = -I$(top_builddir)/include/curl \
-           -I$(top_builddir)/include      \
-           -I$(top_srcdir)/include        \
-           -I$(top_builddir)/lib          \
-           -I$(top_srcdir)/lib            \
-           -I$(top_builddir)/ares         \
-           -I$(top_srcdir)/ares
+AM_CPPFLAGS = -I$(top_builddir)/include/curl \
+              -I$(top_builddir)/include      \
+              -I$(top_srcdir)/include        \
+              -I$(top_builddir)/lib          \
+              -I$(top_srcdir)/lib            \
+              -I$(top_builddir)/ares         \
+              -I$(top_srcdir)/ares
 else
-INCLUDES = -I$(top_builddir)/include/curl \
-           -I$(top_builddir)/include      \
-           -I$(top_srcdir)/include        \
-           -I$(top_builddir)/lib          \
-           -I$(top_srcdir)/lib
+AM_CPPFLAGS = -I$(top_builddir)/include/curl \
+              -I$(top_builddir)/include      \
+              -I$(top_srcdir)/include        \
+              -I$(top_builddir)/lib          \
+              -I$(top_srcdir)/lib
 endif
 
-# Makefile.inc provides the source defines (noinst_PROGRAMS, useful, *_SOURCES, and *_LDADD)
+if DOING_NATIVE_WINDOWS
+AM_CPPFLAGS = -DCURL_STATICLIB
+endif
+
+# Makefile.inc provides neat definitions
 include Makefile.inc
 
-extra_DIST = base64.pl Makefile.inc
+EXTRA_DIST = base64.pl Makefile.inc
 

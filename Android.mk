@@ -1,8 +1,13 @@
 # Google Android makefile for curl and libcurl
 #
+# This file can be used when building curl using the full Android source
+# release or the NDK. Most users do not want or need to do this; please
+# instead read the Android section in docs/INSTALL for alternate
+# methods.
+#
 # Place the curl source (including this makefile) into external/curl/ in the
 # Android source tree.  Then build them with 'make curl' or just 'make libcurl'
-# from the Android root. Tested with Android 1.5 and 2.1
+# from the Android root. Tested with Android versions 1.5, 2.1-2.3
 #
 # Note: you must first create a curl_config.h file by running configure in the
 # Android environment. The only way I've found to do this is tricky. Perform a
@@ -42,7 +47,7 @@
 # into the right place (but see the note about this below).
 #
 # Dan Fandrich
-# August 2010
+# November 2011
 
 LOCAL_PATH:= $(call my-dir)
 
@@ -62,8 +67,7 @@ CURL_HEADERS := \
 	mprintf.h \
 	multi.h \
 	stdcheaders.h \
-	typecheck-gcc.h \
-	types.h
+	typecheck-gcc.h
 
 LOCAL_SRC_FILES := $(addprefix lib/,$(CSOURCES))
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/
@@ -73,6 +77,7 @@ LOCAL_COPY_HEADERS_TO := libcurl/curl
 LOCAL_COPY_HEADERS := $(addprefix include/curl/,$(CURL_HEADERS))
 
 LOCAL_MODULE:= libcurl
+LOCAL_MODULE_TAGS := optional
 
 # Copy the licence to a place where Android will find it.
 # Actually, this doesn't quite work because the build system searches
@@ -93,6 +98,7 @@ include $(LOCAL_PATH)/src/Makefile.inc
 LOCAL_SRC_FILES := $(addprefix src/,$(CURL_CFILES))
 
 LOCAL_MODULE := curl
+LOCAL_MODULE_TAGS := optional
 LOCAL_STATIC_LIBRARIES := libcurl
 LOCAL_SYSTEM_SHARED_LIBRARIES := libc
 

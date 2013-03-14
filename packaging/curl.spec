@@ -1,16 +1,15 @@
 Name:       curl
 Summary:    A utility for getting files from remote servers (FTP, HTTP, and others)
-Version:    7.21.3
-Release:    7
+Version:    7.28.1
+Release:    1
 Group:      Applications/Internet
 License:    MIT
 #URL:        http://curl.haxx.se/
 #Source0:    http://curl.haxx.se/download/%{name}-%{version}.tar.bz2
-Source0:    %{name}-%{version}.tar.bz2
+Source0:    %{name}-%{version}.tar.gz
 
 BuildRequires:  pkgconfig(openssl)
 BuildRequires:  pkgconfig(libidn)
-BuildRequires:  pkgconfig(nss)
 BuildRequires:  pkgconfig(zlib)
 BuildRequires:  pkgconfig(libcares)
 Provides:   webclient

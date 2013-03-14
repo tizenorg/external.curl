@@ -5,7 +5,7 @@
 #                            | (__| |_| |  _ <| |___
 #                             \___|\___/|_| \_\_____|
 #
-# Copyright (C) 1998 - 2010, Daniel Stenberg, <daniel@haxx.se>, et al.
+# Copyright (C) 1998 - 2012, Daniel Stenberg, <daniel@haxx.se>, et al.
 #
 # This software is licensed as described in the file COPYING, which
 # you should have received as part of this distribution. The terms
@@ -30,15 +30,15 @@ DOCS = README.encoding README.memoryleak README.ares README.curlx	\
 
 CMAKE_DIST = CMakeLists.txt curl_config.h.cmake
 
-EXTRA_DIST = Makefile.b32 Makefile.m32 Makefile.vc6 $(DSP)                 \
- vc6libcurl.dsw config-win32.h config-win32ce.h config-riscos.h            \
- config-mac.h curl_config.h.in makefile.dj config-dos.h libcurl.plist      \
- libcurl.rc config-amigaos.h amigaos.c amigaos.h makefile.amiga		   \
- Makefile.netware nwlib.c nwos.c libcurl.imp msvcproj.head msvcproj.foot   \
- config-win32ce.h config-os400.h setup-os400.h config-symbian.h		   \
- Makefile.Watcom config-tpf.h $(DOCS) $(VCPROJ) mk-ca-bundle.pl		   \
- mk-ca-bundle.vbs firefox-db2pem.sh $(CMAKE_DIST) config-vxworks.h	   \
- Makefile.vxworks config-vms.h
+EXTRA_DIST = Makefile.b32 Makefile.m32 Makefile.vc6 $(DSP)              \
+ vc6libcurl.dsw config-win32.h config-win32ce.h config-riscos.h         \
+ config-mac.h curl_config.h.in makefile.dj config-dos.h libcurl.plist   \
+ libcurl.rc config-amigaos.h makefile.amiga                             \
+ Makefile.netware nwlib.c nwos.c msvcproj.head msvcproj.foot		\
+ config-win32ce.h config-os400.h setup-os400.h config-symbian.h		\
+ Makefile.Watcom config-tpf.h $(DOCS) $(VCPROJ) mk-ca-bundle.pl		\
+ mk-ca-bundle.vbs firefox-db2pem.sh $(CMAKE_DIST) config-vxworks.h	\
+ Makefile.vxworks config-vms.h checksrc.pl
 
 CLEANFILES = $(DSP) $(VCPROJ)
 
@@ -47,6 +47,8 @@ LIBCURL_LIBS = @LIBCURL_LIBS@
 
 # This might hold -Werror
 CFLAGS += @CURL_CFLAG_EXTRAS@
+
+CFLAG_CURL_SYMBOL_HIDING = @CFLAG_CURL_SYMBOL_HIDING@
 
 # Specify our include paths here, and do it relative to $(top_srcdir) and
 # $(top_builddir), to ensure that these paths which belong to the library
@@ -62,19 +64,29 @@ CFLAGS += @CURL_CFLAG_EXTRAS@
 # $(top_srcdir)/ares is for in-tree c-ares's external include files
 
 if USE_EMBEDDED_ARES
-INCLUDES = -I$(top_builddir)/include/curl \
-           -I$(top_builddir)/include      \
-           -I$(top_srcdir)/include        \
-           -I$(top_builddir)/lib          \
-           -I$(top_srcdir)/lib            \
-           -I$(top_builddir)/ares         \
-           -I$(top_srcdir)/ares
+AM_CPPFLAGS = -I$(top_builddir)/include/curl \
+              -I$(top_builddir)/include      \
+              -I$(top_srcdir)/include        \
+              -I$(top_builddir)/lib          \
+              -I$(top_srcdir)/lib            \
+              -I$(top_builddir)/ares         \
+              -I$(top_srcdir)/ares
 else
-INCLUDES = -I$(top_builddir)/include/curl \
-           -I$(top_builddir)/include      \
-           -I$(top_srcdir)/include        \
-           -I$(top_builddir)/lib          \
-           -I$(top_srcdir)/lib
+AM_CPPFLAGS = -I$(top_builddir)/include/curl \
+              -I$(top_builddir)/include      \
+              -I$(top_srcdir)/include        \
+              -I$(top_builddir)/lib          \
+              -I$(top_srcdir)/lib
+endif
+
+# Mostly for Windows build targets, when building libcurl library
+if USE_CPPFLAG_BUILDING_LIBCURL
+AM_CPPFLAGS += -DBUILDING_LIBCURL
+endif
+
+# Mostly for Windows build targets, when building static libcurl
+if USE_CPPFLAG_CURL_STATICLIB
+AM_CPPFLAGS += -DCURL_STATICLIB
 endif
 
 if SONAME_BUMP
@@ -87,9 +99,9 @@ if SONAME_BUMP
 #
 # This conditional soname bump SHOULD be removed at next "proper" bump.
 #
-VERSIONINFO=-version-info 7:0:2
+VERSIONINFO=-version-info 8:0:3
 else
-VERSIONINFO=-version-info 6:0:2
+VERSIONINFO=-version-info 7:0:3
 endif
 
 # This flag accepts an argument of the form current[:revision[:age]]. So,
@@ -106,7 +118,7 @@ endif
 # For the full guide on libcurl ABI rules, see docs/libcurl/ABI
 
 if NO_UNDEFINED
-# The -no-undefined flag is CRUCIAL for this to build fine on Cygwin.
+# The -no-undefined flag is crucial to build fine on some platforms
 UNDEF = -no-undefined
 endif
 
@@ -120,12 +132,32 @@ if VERSIONED_SYMBOLS
 VERSIONED_SYMBOLS = -Wl,--version-script=libcurl.vers
 endif
 
-libcurl_la_LDFLAGS = $(UNDEF) $(VERSIONINFO) $(MIMPURE) $(LIBCURL_LIBS) $(VERSIONED_SYMBOLS)
+libcurl_la_LDFLAGS = $(UNDEF) $(VERSIONINFO) $(MIMPURE) $(VERSIONED_SYMBOLS) $(LIBCURL_LIBS)
+
+if DOING_CURL_SYMBOL_HIDING
+libcurl_la_CPPFLAGS = $(AM_CPPFLAGS) -DCURL_HIDDEN_SYMBOLS
+libcurl_la_CFLAGS = $(AM_CFLAGS) $(CFLAG_CURL_SYMBOL_HIDING)
+else
+libcurl_la_CPPFLAGS = $(AM_CPPFLAGS)
+libcurl_la_CFLAGS = $(AM_CFLAGS)
+endif
+
+# unit testing static library built only along with unit tests
+if BUILD_UNITTESTS
+noinst_LTLIBRARIES = libcurlu.la
+else
+noinst_LTLIBRARIES =
+endif
+
+libcurlu_la_CPPFLAGS = $(AM_CPPFLAGS) -DUNITTESTS
+libcurlu_la_LDFLAGS = -static $(LIBCURL_LIBS)
+libcurlu_la_CFLAGS = $(AM_CFLAGS)
 
 # Makefile.inc provides the CSOURCES and HHEADERS defines
 include Makefile.inc
 
 libcurl_la_SOURCES = $(CSOURCES) $(HHEADERS)
+libcurlu_la_SOURCES = $(CSOURCES) $(HHEADERS)
 
 WIN32SOURCES = $(CSOURCES)
 WIN32HEADERS = $(HHEADERS) config-win32.h
@@ -177,3 +209,12 @@ $(VCPROJ): vc8proj.head vc8proj.foot Makefile.am
 	echo "<File RelativePath=\""$$file"\"></File>" $(VCPROJOUT); \
 	done; \
 	cat $(srcdir)/vc8proj.foot $(VCPROJOUT) )
+
+
+checksrc:
+	@@PERL@ $(top_srcdir)/lib/checksrc.pl -D$(top_srcdir)/lib $(CSOURCES) $(HHEADERS)
+
+if CURLDEBUG
+# for debug builds, we scan the sources on all regular make invokes
+all-local: checksrc
+endif

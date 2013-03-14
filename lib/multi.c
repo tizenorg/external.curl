@@ -5,7 +5,7 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2010, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 1998 - 2012, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
@@ -41,7 +41,9 @@
 #include "sendf.h"
 #include "timeval.h"
 #include "http.h"
+#include "select.h"
 #include "warnless.h"
+#include "speedcheck.h"
 
 #define _MPRINTF_REPLACE /* use our functions only */
 #include <curl/mprintf.h>
@@ -124,9 +126,9 @@ struct Curl_one_easy {
 #define CURL_MULTI_HANDLE 0x000bab1e
 
 #define GOOD_MULTI_HANDLE(x) \
-  ((x)&&(((struct Curl_multi *)(x))->type == CURL_MULTI_HANDLE))
+  ((x) && (((struct Curl_multi *)(x))->type == CURL_MULTI_HANDLE))
 #define GOOD_EASY_HANDLE(x) \
- (((struct SessionHandle *)(x))->magic == CURLEASY_MAGIC_NUMBER)
+  ((x) && (((struct SessionHandle *)(x))->magic == CURLEASY_MAGIC_NUMBER))
 
 /* This is the struct known as CURLM on the outside */
 struct Curl_multi {
@@ -134,7 +136,7 @@ struct Curl_multi {
      this multi handle with an easy handle. Set this to CURL_MULTI_HANDLE. */
   long type;
 
-  /* We have a linked list with easy handles */
+  /* We have a doubly-linked circular list with easy handles */
   struct Curl_one_easy easy;
 
   int num_easy; /* amount of entries in the linked list above. */
@@ -424,12 +426,13 @@ CURLM *curl_multi_init(void)
   return (CURLM *) multi;
 
   error:
-  if(multi->sockhash)
-    Curl_hash_destroy(multi->sockhash);
-  if(multi->hostcache)
-    Curl_hash_destroy(multi->hostcache);
-  if(multi->connc)
-    Curl_rm_connc(multi->connc);
+
+  Curl_hash_destroy(multi->sockhash);
+  multi->sockhash = NULL;
+  Curl_hash_destroy(multi->hostcache);
+  multi->hostcache = NULL;
+  Curl_rm_connc(multi->connc);
+  multi->connc = NULL;
 
   free(multi);
   return NULL;
@@ -438,11 +441,12 @@ CURLM *curl_multi_init(void)
 CURLMcode curl_multi_add_handle(CURLM *multi_handle,
                                 CURL *easy_handle)
 {
-  struct Curl_multi *multi=(struct Curl_multi *)multi_handle;
+  struct curl_llist *timeoutlist;
   struct Curl_one_easy *easy;
   struct closure *cl;
-  struct closure *prev=NULL;
-  struct SessionHandle *data = easy_handle;
+  struct closure *prev = NULL;
+  struct Curl_multi *multi = (struct Curl_multi *)multi_handle;
+  struct SessionHandle *data = (struct SessionHandle *)easy_handle;
 
   /* First, make some basic checks that the CURLM handle is a good handle */
   if(!GOOD_MULTI_HANDLE(multi))
@@ -452,39 +456,77 @@ CURLMcode curl_multi_add_handle(CURLM *multi_handle,
   if(!GOOD_EASY_HANDLE(easy_handle))
     return CURLM_BAD_EASY_HANDLE;
 
-  /* Prevent users to add the same handle more than once! */
-  if(((struct SessionHandle *)easy_handle)->multi)
+  /* Prevent users from adding same easy handle more than
+     once and prevent adding to more than one multi stack */
+  if(data->multi)
     /* possibly we should create a new unique error code for this condition */
     return CURLM_BAD_EASY_HANDLE;
 
-  data->state.timeoutlist = Curl_llist_alloc(multi_freetimeout);
-  if(!data->state.timeoutlist)
+  /* We want the connection cache to have plenty of room. Before we supported
+     the shared cache every single easy handle had 5 entries in their cache
+     by default. */
+  if(((multi->num_easy + 1) * 4) > multi->connc->num) {
+    long newmax = (multi->num_easy + 1) * 4;
+
+    if(multi->maxconnects && (newmax > multi->maxconnects))
+      /* don't grow beyond the allowed size */
+      newmax = multi->maxconnects;
+
+    if(newmax > multi->connc->num) {
+      /* we only do this is we can in fact grow the cache */
+      CURLcode res = Curl_ch_connc(data, multi->connc, newmax);
+      if(res)
+        return CURLM_OUT_OF_MEMORY;
+    }
+  }
+
+  /* Allocate and initialize timeout list for easy handle */
+  timeoutlist = Curl_llist_alloc(multi_freetimeout);
+  if(!timeoutlist)
     return CURLM_OUT_OF_MEMORY;
 
-  /* Now, time to add an easy handle to the multi stack */
+  /* Allocate new node for the doubly-linked circular list of
+     Curl_one_easy structs that holds pointers to easy handles */
   easy = calloc(1, sizeof(struct Curl_one_easy));
-  if(!easy)
+  if(!easy) {
+    Curl_llist_destroy(timeoutlist, NULL);
     return CURLM_OUT_OF_MEMORY;
+  }
 
+  /*
+  ** No failure allowed in this function beyond this point. And
+  ** no modification of easy nor multi handle allowed before this
+  ** except for potential multi's connection cache growing which
+  ** won't be undone in this function no matter what.
+  */
+
+  /* Make easy handle use timeout list initialized above */
+  data->state.timeoutlist = timeoutlist;
+  timeoutlist = NULL;
+
+  /* Remove handle from the list of 'closure handles' in case it is there */
   cl = multi->closure;
   while(cl) {
     struct closure *next = cl->next;
-    if(cl->easy_handle == (struct SessionHandle *)easy_handle) {
-      /* remove this handle from the closure list */
+    if(cl->easy_handle == data) {
+      /* Remove node from list */
       free(cl);
       if(prev)
         prev->next = next;
       else
         multi->closure = next;
-      break; /* no need to continue since this handle can only be present once
-                in the list */
+      /* removed from closure list now, this might reuse an existing
+         existing connection but we don't know that at this point */
+      data->state.shared_conn = NULL;
+      /* No need to continue, handle can only be present once in the list */
+      break;
     }
     prev = cl;
     cl = next;
   }
 
   /* set the easy handle */
-  easy->easy_handle = easy_handle;
+  easy->easy_handle = data;
   multistate(easy, CURLM_STATE_INIT);
 
   /* set the back pointer to one_easy to assist in removal */
@@ -505,25 +547,21 @@ CURLMcode curl_multi_add_handle(CURLM *multi_handle,
     easy->easy_handle->dns.hostcachetype = HCACHE_MULTI;
   }
 
-  if(easy->easy_handle->state.connc) {
-    if(easy->easy_handle->state.connc->type == CONNCACHE_PRIVATE) {
-      /* kill old private version */
-      Curl_rm_connc(easy->easy_handle->state.connc);
-      /* point out our shared one instead */
-      easy->easy_handle->state.connc = multi->connc;
-    }
-    /* else it is already using multi? */
+  /* On a multi stack the connection cache, owned by the multi handle,
+     is shared between all easy handles within the multi handle. */
+  if(easy->easy_handle->state.connc &&
+     (easy->easy_handle->state.connc->type == CONNCACHE_PRIVATE)) {
+    /* kill old private connection cache */
+    Curl_rm_connc(easy->easy_handle->state.connc);
+    easy->easy_handle->state.connc = NULL;
   }
-  else
-    /* point out our shared one */
-    easy->easy_handle->state.connc = multi->connc;
-
-  /* Make sure the type is setup correctly */
+  /* Point now to this multi's connection cache */
+  easy->easy_handle->state.connc = multi->connc;
   easy->easy_handle->state.connc->type = CONNCACHE_MULTI;
 
-  /* This adds the new entry at the back of the list
-     to try and maintain a FIFO queue so the pipelined
-     requests are in order. */
+  /* This adds the new entry at the 'end' of the doubly-linked circular
+     list of Curl_one_easy structs to try and maintain a FIFO queue so
+     the pipelined requests are in order. */
 
   /* We add this new entry last in the list. We make our 'next' point to the
      'first' struct and our 'prev' point to the previous 'prev' */
@@ -537,6 +575,7 @@ CURLMcode curl_multi_add_handle(CURLM *multi_handle,
      the new node */
   easy->prev->next = easy;
 
+  /* make the SessionHandle refer back to this multi handle */
   Curl_easy_addmulti(easy_handle, multi_handle);
 
   /* make the SessionHandle struct refer back to this struct */
@@ -552,27 +591,6 @@ CURLMcode curl_multi_add_handle(CURLM *multi_handle,
 
   /* increase the node-counter */
   multi->num_easy++;
-
-  if((multi->num_easy * 4) > multi->connc->num) {
-    /* We want the connection cache to have plenty room. Before we supported
-       the shared cache every single easy handle had 5 entries in their cache
-       by default. */
-    long newmax = multi->num_easy * 4;
-
-    if(multi->maxconnects && (multi->maxconnects < newmax))
-      /* don't grow beyond the allowed size */
-      newmax = multi->maxconnects;
-
-    if(newmax > multi->connc->num) {
-      /* we only do this is we can in fact grow the cache */
-      CURLcode res = Curl_ch_connc(easy_handle, multi->connc, newmax);
-      if(res != CURLE_OK) {
-        /* FIXME: may need to do more cleanup here */
-        curl_multi_remove_handle(multi_handle, easy_handle);
-        return CURLM_OUT_OF_MEMORY;
-      }
-    }
-  }
 
   /* increase the alive-counter */
   multi->num_alive++;
@@ -628,9 +646,10 @@ CURLMcode curl_multi_remove_handle(CURLM *multi_handle,
   easy = data->multi_pos;
 
   if(easy) {
-    bool premature = (bool)(easy->state < CURLM_STATE_COMPLETED);
-    bool easy_owns_conn = (bool)(easy->easy_conn &&
-                                 (easy->easy_conn->data == easy->easy_handle));
+    bool premature = (easy->state < CURLM_STATE_COMPLETED) ? TRUE : FALSE;
+    bool easy_owns_conn = (easy->easy_conn &&
+                           (easy->easy_conn->data == easy->easy_handle)) ?
+                           TRUE : FALSE;
 
     /* If the 'state' is not INIT or COMPLETED, we might need to do something
        nice to put the easy_handle in a good known state when this returns. */
@@ -645,7 +664,7 @@ CURLMcode curl_multi_remove_handle(CURLM *multi_handle,
        easy->state > CURLM_STATE_WAITDO &&
        easy->state < CURLM_STATE_COMPLETED) {
       /* If the handle is in a pipeline and has started sending off its
-         request but not received its reponse yet, we need to close
+         request but not received its response yet, we need to close
          connection. */
       easy->easy_conn->bits.close = TRUE;
       /* Set connection owner so that Curl_done() closes it.
@@ -674,7 +693,7 @@ CURLMcode curl_multi_remove_handle(CURLM *multi_handle,
 
       /* we must call Curl_done() here (if we still "own it") so that we don't
          leave a half-baked one around */
-      if (easy_owns_conn) {
+      if(easy_owns_conn) {
 
         /* Curl_done() clears the conn->data field to lose the association
            between the easy handle and the connection
@@ -794,27 +813,19 @@ static int waitconnect_getsock(struct connectdata *conn,
 
   /* when we've sent a CONNECT to a proxy, we should rather wait for the
      socket to become readable to be able to get the response headers */
-  if(conn->bits.tunnel_connecting)
+  if(conn->tunnel_state[FIRSTSOCKET] == TUNNEL_CONNECT)
     return GETSOCK_READSOCK(0);
 
   return GETSOCK_WRITESOCK(0);
 }
 
 static int domore_getsock(struct connectdata *conn,
-                          curl_socket_t *sock,
+                          curl_socket_t *socks,
                           int numsocks)
 {
-  if(!numsocks)
-    return GETSOCK_BLANK;
-
-  /* When in DO_MORE state, we could be either waiting for us
-     to connect to a remote site, or we could wait for that site
-     to connect to us. It makes a difference in the way: if we
-     connect to the site we wait for the socket to become writable, if
-     the site connects to us we wait for it to become readable */
-  sock[0] = conn->sock[SECONDARYSOCKET];
-
-  return GETSOCK_WRITESOCK(0);
+  if(conn && conn->handler->domore_getsock)
+    return conn->handler->domore_getsock(conn, socks, numsocks);
+  return GETSOCK_BLANK;
 }
 
 /* returns bitmapped flags for this handle and its sockets */
@@ -855,7 +866,7 @@ static int multi_getsock(struct Curl_one_easy *easy,
     return 0;
 
   case CURLM_STATE_WAITRESOLVE:
-    return Curl_resolv_getsock(easy->easy_conn, socks, numsocks);
+    return Curl_resolver_getsock(easy->easy_conn, socks, numsocks);
 
   case CURLM_STATE_PROTOCONNECT:
     return Curl_protocol_getsock(easy->easy_conn, socks, numsocks);
@@ -872,7 +883,8 @@ static int multi_getsock(struct Curl_one_easy *easy,
     return domore_getsock(easy->easy_conn, socks, numsocks);
 
   case CURLM_STATE_DO_DONE: /* since is set after DO is completed, we switch
-                               to waiting for the same as the *PERFORM states */
+                               to waiting for the same as the *PERFORM
+                               states */
   case CURLM_STATE_PERFORM:
   case CURLM_STATE_WAITPERFORM:
     return Curl_single_getsock(easy->easy_conn, socks, numsocks);
@@ -905,11 +917,11 @@ CURLMcode curl_multi_fdset(CURLM *multi_handle,
     for(i=0; i< MAX_SOCKSPEREASYHANDLE; i++) {
       curl_socket_t s = CURL_SOCKET_BAD;
 
-      if(bitmap & GETSOCK_READSOCK(i)) {
+      if((bitmap & GETSOCK_READSOCK(i)) && VALID_SOCK((sockbunch[i]))) {
         FD_SET(sockbunch[i], read_fd_set);
         s = sockbunch[i];
       }
-      if(bitmap & GETSOCK_WRITESOCK(i)) {
+      if((bitmap & GETSOCK_WRITESOCK(i)) && VALID_SOCK((sockbunch[i]))) {
         FD_SET(sockbunch[i], write_fd_set);
         s = sockbunch[i];
       }
@@ -927,6 +939,100 @@ CURLMcode curl_multi_fdset(CURLM *multi_handle,
 
   *max_fd = this_max_fd;
 
+  return CURLM_OK;
+}
+
+CURLMcode curl_multi_wait(CURLM *multi_handle,
+                          struct curl_waitfd extra_fds[],
+                          unsigned int extra_nfds,
+                          int timeout_ms,
+                          int *ret)
+{
+  struct Curl_multi *multi=(struct Curl_multi *)multi_handle;
+  struct Curl_one_easy *easy;
+  curl_socket_t sockbunch[MAX_SOCKSPEREASYHANDLE];
+  int bitmap;
+  unsigned int i;
+  unsigned int nfds = extra_nfds;
+  struct pollfd *ufds;
+
+  if(!GOOD_MULTI_HANDLE(multi))
+    return CURLM_BAD_HANDLE;
+
+  /* Count up how many fds we have from the multi handle */
+  easy=multi->easy.next;
+  while(easy != &multi->easy) {
+    bitmap = multi_getsock(easy, sockbunch, MAX_SOCKSPEREASYHANDLE);
+
+    for(i=0; i< MAX_SOCKSPEREASYHANDLE; i++) {
+      curl_socket_t s = CURL_SOCKET_BAD;
+
+      if(bitmap & GETSOCK_READSOCK(i)) {
+        ++nfds;
+        s = sockbunch[i];
+      }
+      if(bitmap & GETSOCK_WRITESOCK(i)) {
+        ++nfds;
+        s = sockbunch[i];
+      }
+      if(s == CURL_SOCKET_BAD) {
+        break;
+      }
+    }
+
+    easy = easy->next; /* check next handle */
+  }
+
+  ufds = (struct pollfd *)malloc(nfds * sizeof(struct pollfd));
+  nfds = 0;
+
+  /* Add the curl handles to our pollfds first */
+  easy=multi->easy.next;
+  while(easy != &multi->easy) {
+    bitmap = multi_getsock(easy, sockbunch, MAX_SOCKSPEREASYHANDLE);
+
+    for(i=0; i< MAX_SOCKSPEREASYHANDLE; i++) {
+      curl_socket_t s = CURL_SOCKET_BAD;
+
+      if(bitmap & GETSOCK_READSOCK(i)) {
+        ufds[nfds].fd = sockbunch[i];
+        ufds[nfds].events = POLLIN;
+        ++nfds;
+        s = sockbunch[i];
+      }
+      if(bitmap & GETSOCK_WRITESOCK(i)) {
+        ufds[nfds].fd = sockbunch[i];
+        ufds[nfds].events = POLLOUT;
+        ++nfds;
+        s = sockbunch[i];
+      }
+      if(s == CURL_SOCKET_BAD) {
+        break;
+      }
+    }
+
+    easy = easy->next; /* check next handle */
+  }
+
+  /* Add external file descriptions from poll-like struct curl_waitfd */
+  for(i = 0; i < extra_nfds; i++) {
+    ufds[nfds].fd = extra_fds[i].fd;
+    ufds[nfds].events = (short) (
+      ((extra_fds[i].events & CURL_WAIT_POLLIN)  ? POLLIN  : 0) |
+      ((extra_fds[i].events & CURL_WAIT_POLLPRI) ? POLLPRI : 0) |
+      ((extra_fds[i].events & CURL_WAIT_POLLOUT) ? POLLOUT : 0) );
+    ++nfds;
+  }
+
+  if(nfds)
+    /* wait... */
+    i = Curl_poll(ufds, nfds, timeout_ms);
+  else
+    i = 0;
+
+  free(ufds);
+  if(ret)
+    *ret = i;
   return CURLM_OK;
 }
 
@@ -951,8 +1057,8 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
   data = easy->easy_handle;
 
   do {
-    /* this is a do-while loop just to allow a break to skip to the end
-       of it */
+    /* this is a single-iteration do-while loop just to allow a
+       break to skip to the end of it */
     bool disconnect_conn = FALSE;
 
     /* Handle the case when the pipe breaks, i.e., the connection
@@ -973,6 +1079,16 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
       break;
     }
 
+    if(!easy->easy_conn &&
+       easy->state > CURLM_STATE_CONNECT &&
+       easy->state < CURLM_STATE_DONE) {
+      /* In all these states, the code will blindly access 'easy->easy_conn'
+         so this is precaution that it isn't NULL. And it silences static
+         analyzers. */
+      failf(data, "In state %d with no easy_conn, bail out!\n", easy->state);
+      return CURLM_INTERNAL_ERROR;
+    }
+
     if(easy->easy_conn && easy->state > CURLM_STATE_CONNECT &&
        easy->state < CURLM_STATE_COMPLETED)
       /* Make sure we set the connection's current owner */
@@ -984,7 +1100,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
       /* we need to wait for the connect state as only then is the start time
          stored, but we must not check already completed handles */
 
-      timeout_ms = Curl_timeleft(easy->easy_conn, &now,
+      timeout_ms = Curl_timeleft(data, &now,
                                  (easy->state <= CURLM_STATE_WAITDO)?
                                  TRUE:FALSE);
 
@@ -1003,6 +1119,11 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
                 Curl_tvdiff(now, data->progress.t_startsingle), k->bytecount,
                 k->size);
         }
+
+        /* Force the connection closed because the server could continue to
+           send us stuff at any time. (The disconnect_conn logic used below
+           doesn't work at this point). */
+        easy->easy_conn->bits.close = TRUE;
         easy->result = CURLE_OPERATION_TIMEDOUT;
         multistate(easy, CURLM_STATE_COMPLETED);
         break;
@@ -1033,7 +1154,9 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
         /* Add this handle to the send or pend pipeline */
         easy->result = addHandleToSendOrPendPipeline(data,
                                                      easy->easy_conn);
-        if(CURLE_OK == easy->result) {
+        if(CURLE_OK != easy->result)
+          disconnect_conn = TRUE;
+        else {
           if(async)
             /* We're now waiting for an asynchronous name lookup */
             multistate(easy, CURLM_STATE_WAITRESOLVE);
@@ -1048,7 +1171,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
                          CURLM_STATE_WAITDO:CURLM_STATE_DO);
             else {
 #ifndef CURL_DISABLE_HTTP
-              if(easy->easy_conn->bits.tunnel_connecting)
+              if(easy->easy_conn->tunnel_state[FIRSTSOCKET] == TUNNEL_CONNECT)
                 multistate(easy, CURLM_STATE_WAITPROXYCONNECT);
               else
 #endif
@@ -1065,14 +1188,17 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
       struct Curl_dns_entry *dns = NULL;
 
       /* check if we have the name resolved by now */
-      easy->result = Curl_is_resolved(easy->easy_conn, &dns);
+      easy->result = Curl_resolver_is_resolved(easy->easy_conn, &dns);
+
+      /* Update sockets here, because the socket(s) may have been
+         closed and the application thus needs to be told, even if it
+         is likely that the same socket(s) will again be used further
+         down.  If the name has not yet been resolved, it is likely
+         that new sockets have been opened in an attempt to contact
+         another resolver. */
+      singlesocket(multi, easy);
 
       if(dns) {
-        /* Update sockets here. Mainly because the socket(s) may have been
-           closed and the application thus needs to be told, even if it is
-           likely that the same socket(s) will again be used further down. */
-        singlesocket(multi, easy);
-
         /* Perform the next step in the connection phase, and then move on
            to the WAITCONNECT state */
         easy->result = Curl_async_resolved(easy->easy_conn,
@@ -1090,7 +1216,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
                        CURLM_STATE_WAITDO:CURLM_STATE_DO);
           else {
 #ifndef CURL_DISABLE_HTTP
-            if(easy->easy_conn->bits.tunnel_connecting)
+            if(easy->easy_conn->tunnel_state[FIRSTSOCKET] == TUNNEL_CONNECT)
               multistate(easy, CURLM_STATE_WAITPROXYCONNECT);
             else
 #endif
@@ -1122,8 +1248,8 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
         result = CURLM_CALL_MULTI_PERFORM;
         multistate(easy, CURLM_STATE_CONNECT);
       }
-      else if (CURLE_OK == easy->result) {
-        if(!easy->easy_conn->bits.tunnel_connecting)
+      else if(CURLE_OK == easy->result) {
+        if(easy->easy_conn->tunnel_state[FIRSTSOCKET] == TUNNEL_COMPLETE)
           multistate(easy, CURLM_STATE_WAITCONNECT);
       }
       break;
@@ -1135,8 +1261,6 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
                                        FIRSTSOCKET,
                                        &connected);
       if(connected) {
-        /* see if we need to do any proxy magic first once we connected */
-        easy->result = Curl_connected_proxy(easy->easy_conn);
 
         if(!easy->result)
           /* if everything is still fine we do the protocol-specific connect
@@ -1160,7 +1284,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
              BUT if we are using a proxy we must change to WAITPROXYCONNECT
           */
 #ifndef CURL_DISABLE_HTTP
-          if(easy->easy_conn->bits.tunnel_connecting)
+          if(easy->easy_conn->tunnel_state[FIRSTSOCKET] == TUNNEL_CONNECT)
             multistate(easy, CURLM_STATE_WAITPROXYCONNECT);
           else
 #endif
@@ -1189,7 +1313,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
       else if(easy->result) {
         /* failure detected */
         Curl_posttransfer(data);
-        Curl_done(&easy->easy_conn, easy->result, FALSE);
+        Curl_done(&easy->easy_conn, easy->result, TRUE);
         disconnect_conn = TRUE;
       }
       break;
@@ -1220,7 +1344,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
         easy->easy_conn->bits.close = FALSE;
         multistate(easy, CURLM_STATE_DONE);
         easy->result = CURLE_OK;
-        result = CURLM_OK;
+        result = CURLM_CALL_MULTI_PERFORM;
       }
       else {
         /* Perform the protocol's DO action */
@@ -1259,8 +1383,8 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
             result = CURLM_CALL_MULTI_PERFORM;
           }
         }
-        else if ((CURLE_SEND_ERROR == easy->result) &&
-                 easy->easy_conn->bits.reuse) {
+        else if((CURLE_SEND_ERROR == easy->result) &&
+                easy->easy_conn->bits.reuse) {
           /*
            * In this situation, a connection that we were trying to use
            * may have unexpectedly died.  If possible, send the connection
@@ -1278,7 +1402,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
             disconnect_conn = TRUE;
           }
           else
-            retry = (bool)(newurl?TRUE:FALSE);
+            retry = (newurl)?TRUE:FALSE;
 
           Curl_posttransfer(data);
           drc = Curl_done(&easy->easy_conn, easy->result, FALSE);
@@ -1286,7 +1410,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
           /* When set to retry the connection, we must to go back to
            * the CONNECT state */
           if(retry) {
-            if ((drc == CURLE_OK) || (drc == CURLE_SEND_ERROR)) {
+            if((drc == CURLE_OK) || (drc == CURLE_SEND_ERROR)) {
               follow = FOLLOW_RETRY;
               drc = Curl_follow(data, newurl, follow);
               if(drc == CURLE_OK) {
@@ -1326,18 +1450,11 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
                                          &dophase_done);
       if(CURLE_OK == easy->result) {
         if(dophase_done) {
-          /* after DO, go PERFORM... or DO_MORE */
-          if(easy->easy_conn->bits.do_more) {
-            /* we're supposed to do more, but we need to sit down, relax
-               and wait a little while first */
-            multistate(easy, CURLM_STATE_DO_MORE);
-            result = CURLM_OK;
-          }
-          else {
-            /* we're done with the DO, now DO_DONE */
-            multistate(easy, CURLM_STATE_DO_DONE);
-            result = CURLM_CALL_MULTI_PERFORM;
-          }
+          /* after DO, go DO_DONE or DO_MORE */
+          multistate(easy, easy->easy_conn->bits.do_more?
+                     CURLM_STATE_DO_MORE:
+                     CURLM_STATE_DO_DONE);
+          result = CURLM_CALL_MULTI_PERFORM;
         } /* dophase_done */
       }
       else {
@@ -1349,29 +1466,27 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
       break;
 
     case CURLM_STATE_DO_MORE:
-      /* Ready to do more? */
-      easy->result = Curl_is_connected(easy->easy_conn,
-                                       SECONDARYSOCKET,
-                                       &connected);
-      if(connected) {
-        /*
-         * When we are connected, DO MORE and then go DO_DONE
-         */
-        easy->result = Curl_do_more(easy->easy_conn);
+      /*
+       * When we are connected, DO MORE and then go DO_DONE
+       */
+      easy->result = Curl_do_more(easy->easy_conn, &dophase_done);
 
-        /* No need to remove ourselves from the send pipeline here since that
-           is done for us in Curl_done() */
-
-        if(CURLE_OK == easy->result) {
+      /* No need to remove this handle from the send pipeline here since that
+         is done in Curl_done() */
+      if(CURLE_OK == easy->result) {
+        if(dophase_done) {
           multistate(easy, CURLM_STATE_DO_DONE);
           result = CURLM_CALL_MULTI_PERFORM;
         }
-        else {
-          /* failure detected */
-          Curl_posttransfer(data);
-          Curl_done(&easy->easy_conn, easy->result, FALSE);
-          disconnect_conn = TRUE;
-        }
+        else
+          /* stay in DO_MORE */
+          result = CURLM_OK;
+      }
+      else {
+        /* failure detected */
+        Curl_posttransfer(data);
+        Curl_done(&easy->easy_conn, easy->result, FALSE);
+        disconnect_conn = TRUE;
       }
       break;
 
@@ -1408,17 +1523,22 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
 
     case CURLM_STATE_TOOFAST: /* limit-rate exceeded in either direction */
       /* if both rates are within spec, resume transfer */
-      if( ( (data->set.max_send_speed == 0) ||
-            (data->progress.ulspeed < data->set.max_send_speed ))  &&
-          ( (data->set.max_recv_speed == 0) ||
-            (data->progress.dlspeed < data->set.max_recv_speed) ) )
+      if(Curl_pgrsUpdate(easy->easy_conn))
+        easy->result = CURLE_ABORTED_BY_CALLBACK;
+      else
+        easy->result = Curl_speedcheck(data, now);
+
+      if(( (data->set.max_send_speed == 0) ||
+           (data->progress.ulspeed < data->set.max_send_speed ))  &&
+         ( (data->set.max_recv_speed == 0) ||
+           (data->progress.dlspeed < data->set.max_recv_speed)))
         multistate(easy, CURLM_STATE_PERFORM);
       break;
 
     case CURLM_STATE_PERFORM:
       /* check if over send speed */
-      if( (data->set.max_send_speed > 0) &&
-          (data->progress.ulspeed > data->set.max_send_speed) ) {
+      if((data->set.max_send_speed > 0) &&
+         (data->progress.ulspeed > data->set.max_send_speed)) {
         int buffersize;
 
         multistate(easy, CURLM_STATE_TOOFAST);
@@ -1433,8 +1553,8 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
       }
 
       /* check if over recv speed */
-      if( (data->set.max_recv_speed > 0) &&
-          (data->progress.dlspeed > data->set.max_recv_speed) ) {
+      if((data->set.max_recv_speed > 0) &&
+         (data->progress.dlspeed > data->set.max_recv_speed)) {
         int buffersize;
 
         multistate(easy, CURLM_STATE_TOOFAST);
@@ -1470,25 +1590,25 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
          * a protocol which uses two "channels" like FTP, as then the error
          * happened in the data connection.
          */
-        if(!(easy->easy_conn->protocol & PROT_DUALCHANNEL))
+        if(!(easy->easy_conn->handler->flags & PROTOPT_DUAL))
           easy->easy_conn->bits.close = TRUE;
 
         Curl_posttransfer(data);
         Curl_done(&easy->easy_conn, easy->result, FALSE);
       }
-      else if(TRUE == done) {
+      else if(done) {
         char *newurl = NULL;
         bool retry = FALSE;
         followtype follow=FOLLOW_NONE;
 
         easy->result = Curl_retry_request(easy->easy_conn, &newurl);
         if(!easy->result)
-          retry = (bool)(newurl?TRUE:FALSE);
+          retry = (newurl)?TRUE:FALSE;
 
         /* call this even if the readwrite function returned error */
         Curl_posttransfer(data);
 
-        /* we're no longer receving */
+        /* we're no longer receiving */
         moveHandleFromRecvToDonePipeline(data,
                                          easy->easy_conn);
 
@@ -1528,12 +1648,14 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
 
           /* but first check to see if we got a location info even though we're
              not following redirects */
-          if (data->req.location) {
+          if(data->req.location) {
             newurl = data->req.location;
             data->req.location = NULL;
             easy->result = Curl_follow(data, newurl, FOLLOW_FAKE);
-            if (easy->result)
+            if(easy->result) {
+              disconnect_conn = TRUE;
               free(newurl);
+            }
           }
 
           multistate(easy, CURLM_STATE_DONE);
@@ -1570,7 +1692,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
          * access free'd data, if the connection is free'd and the handle
          * removed before we perform the processing in CURLM_STATE_COMPLETED
          */
-        if (easy->easy_conn)
+        if(easy->easy_conn)
           easy->easy_conn = NULL;
       }
 
@@ -1610,7 +1732,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
       return CURLM_INTERNAL_ERROR;
     }
 
-    if(CURLM_STATE_COMPLETED > easy->state) {
+    if(easy->state < CURLM_STATE_COMPLETED) {
       if(CURLE_OK != easy->result) {
         /*
          * If an error was returned, and we aren't in completed state now,
@@ -1634,33 +1756,39 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
                                         easy->easy_conn->done_pipe);
           /* Check if we can move pending requests to send pipe */
           checkPendPipeline(easy->easy_conn);
+
+          if(disconnect_conn) {
+            /* disconnect properly */
+            Curl_disconnect(easy->easy_conn, /* dead_connection */ FALSE);
+
+            /* This is where we make sure that the easy_conn pointer is reset.
+               We don't have to do this in every case block above where a
+               failure is detected */
+            easy->easy_conn = NULL;
+          }
         }
-
-        if(disconnect_conn) {
-          /* disconnect properly */
-          Curl_disconnect(easy->easy_conn, /* dead_connection */ FALSE);
-
-          /* This is where we make sure that the easy_conn pointer is reset.
-             We don't have to do this in every case block above where a
-             failure is detected */
-          easy->easy_conn = NULL;
+        else if(easy->state == CURLM_STATE_CONNECT) {
+          /* Curl_connect() failed */
+          (void)Curl_posttransfer(data);
         }
 
         multistate(easy, CURLM_STATE_COMPLETED);
       }
       /* if there's still a connection to use, call the progress function */
-      else if(easy->easy_conn && Curl_pgrsUpdate(easy->easy_conn))
-        easy->result = CURLE_ABORTED_BY_CALLBACK;
+      else if(easy->easy_conn && Curl_pgrsUpdate(easy->easy_conn)) {
+        /* aborted due to progress callback return code must close the
+           connection */
+        easy->easy_conn->bits.close = TRUE;
+
+        /* if not yet in DONE state, go there, otherwise COMPLETED */
+        multistate(easy, (easy->state < CURLM_STATE_DONE)?
+                   CURLM_STATE_DONE: CURLM_STATE_COMPLETED);
+        result = CURLM_CALL_MULTI_PERFORM;
+      }
     }
-  } while(0);
+  } WHILE_FALSE; /* just to break out from! */
 
   if(CURLM_STATE_COMPLETED == easy->state) {
-    if(data->dns.hostcachetype == HCACHE_MULTI) {
-      /* clear out the usage of the shared DNS cache */
-      data->dns.hostcache = NULL;
-      data->dns.hostcachetype = HCACHE_NONE;
-    }
-
     /* now fill in the Curl_message with this info */
     msg = &easy->msg;
 
@@ -1703,7 +1831,7 @@ CURLMcode curl_multi_perform(CURLM *multi_handle, int *running_handles)
 
     do
       result = multi_runsingle(multi, now, easy);
-    while (CURLM_CALL_MULTI_PERFORM == result);
+    while(CURLM_CALL_MULTI_PERFORM == result);
 
     if(easy->easy_handle->set.wildcardmatch) {
       /* destruct wildcard structures if it is needed */
@@ -1737,7 +1865,7 @@ CURLMcode curl_multi_perform(CURLM *multi_handle, int *running_handles)
 
   *running_handles = multi->num_alive;
 
-  if( CURLM_OK >= returncode )
+  if(CURLM_OK >= returncode)
     update_timer(multi);
 
   return returncode;
@@ -1754,16 +1882,12 @@ CURLMcode curl_multi_cleanup(CURLM *multi_handle)
 
   if(GOOD_MULTI_HANDLE(multi)) {
     multi->type = 0; /* not good anymore */
-    Curl_hash_destroy(multi->hostcache);
-    Curl_hash_destroy(multi->sockhash);
-    multi->hostcache = NULL;
-    multi->sockhash = NULL;
 
     /* go over all connections that have close actions */
     for(i=0; i< multi->connc->num; i++) {
       if(multi->connc->connects[i] &&
-         multi->connc->connects[i]->protocol & PROT_CLOSEACTION) {
-        Curl_disconnect(multi->connc->connects[i], /* dead_connection */ FALSE);
+         multi->connc->connects[i]->handler->flags & PROTOPT_CLOSEACTION) {
+        Curl_disconnect(multi->connc->connects[i], FALSE);
         multi->connc->connects[i] = NULL;
       }
     }
@@ -1771,7 +1895,7 @@ CURLMcode curl_multi_cleanup(CURLM *multi_handle)
        able to close connections "properly" */
     cl = multi->closure;
     while(cl) {
-      cl->easy_handle->state.shared_conn = NULL; /* no more shared */
+      cl->easy_handle->state.shared_conn = NULL; /* allow cleanup */
       if(cl->easy_handle->state.closed)
         /* close handle only if curl_easy_cleanup() already has been called
            for this easy handle */
@@ -1781,10 +1905,15 @@ CURLMcode curl_multi_cleanup(CURLM *multi_handle)
       cl= n;
     }
 
+    Curl_hash_destroy(multi->sockhash);
+    multi->sockhash = NULL;
+
     Curl_rm_connc(multi->connc);
+    multi->connc = NULL;
 
     /* remove the pending list of messages */
     Curl_llist_destroy(multi->msglist, NULL);
+    multi->msglist = NULL;
 
     /* remove all easy handles */
     easy = multi->easy.next;
@@ -1792,6 +1921,7 @@ CURLMcode curl_multi_cleanup(CURLM *multi_handle)
       nexteasy=easy->next;
       if(easy->easy_handle->dns.hostcachetype == HCACHE_MULTI) {
         /* clear out the usage of the shared DNS cache */
+        Curl_hostcache_clean(easy->easy_handle);
         easy->easy_handle->dns.hostcache = NULL;
         easy->easy_handle->dns.hostcachetype = HCACHE_NONE;
       }
@@ -1804,6 +1934,9 @@ CURLMcode curl_multi_cleanup(CURLM *multi_handle)
       free(easy);
       easy = nexteasy;
     }
+
+    Curl_hash_destroy(multi->hostcache);
+    multi->hostcache = NULL;
 
     free(multi);
 
@@ -1909,11 +2042,12 @@ static void singlesocket(struct Curl_multi *multi,
     }
 
     /* we know (entry != NULL) at this point, see the logic above */
-    multi->socket_cb(easy->easy_handle,
-                     s,
-                     action,
-                     multi->socket_userp,
-                     entry->socketp);
+    if(multi->socket_cb)
+      multi->socket_cb(easy->easy_handle,
+                       s,
+                       action,
+                       multi->socket_userp,
+                       entry->socketp);
 
     entry->action = action; /* store the current action state */
   }
@@ -1947,29 +2081,29 @@ static void singlesocket(struct Curl_multi *multi,
         easy_by_hash = entry->easy->multi_pos;
         easy_conn = easy_by_hash->easy_conn;
         if(easy_conn) {
-          if (easy_conn->recv_pipe && easy_conn->recv_pipe->size > 1) {
+          if(easy_conn->recv_pipe && easy_conn->recv_pipe->size > 1) {
             /* the handle should not be removed from the pipe yet */
             remove_sock_from_hash = FALSE;
 
             /* Update the sockhash entry to instead point to the next in line
                for the recv_pipe, or the first (in case this particular easy
                isn't already) */
-            if (entry->easy == easy->easy_handle) {
-              if (isHandleAtHead(easy->easy_handle, easy_conn->recv_pipe))
+            if(entry->easy == easy->easy_handle) {
+              if(isHandleAtHead(easy->easy_handle, easy_conn->recv_pipe))
                 entry->easy = easy_conn->recv_pipe->head->next->ptr;
               else
                 entry->easy = easy_conn->recv_pipe->head->ptr;
             }
           }
-          if (easy_conn->send_pipe  && easy_conn->send_pipe->size > 1) {
+          if(easy_conn->send_pipe  && easy_conn->send_pipe->size > 1) {
             /* the handle should not be removed from the pipe yet */
             remove_sock_from_hash = FALSE;
 
             /* Update the sockhash entry to instead point to the next in line
                for the send_pipe, or the first (in case this particular easy
                isn't already) */
-            if (entry->easy == easy->easy_handle) {
-              if (isHandleAtHead(easy->easy_handle, easy_conn->send_pipe))
+            if(entry->easy == easy->easy_handle) {
+              if(isHandleAtHead(easy->easy_handle, easy_conn->send_pipe))
                 entry->easy = easy_conn->send_pipe->head->next->ptr;
               else
                 entry->easy = easy_conn->send_pipe->head->ptr;
@@ -1987,12 +2121,14 @@ static void singlesocket(struct Curl_multi *multi,
            either since it never got to know about it */
         remove_sock_from_hash = FALSE;
 
-      if (remove_sock_from_hash) {
-        multi->socket_cb(easy->easy_handle,
-                         s,
-                         CURL_POLL_REMOVE,
-                         multi->socket_userp,
-                         entry ? entry->socketp : NULL);
+      if(remove_sock_from_hash) {
+        /* in this case 'entry' is always non-NULL */
+        if(multi->socket_cb)
+          multi->socket_cb(easy->easy_handle,
+                           s,
+                           CURL_POLL_REMOVE,
+                           multi->socket_userp,
+                           entry->socketp);
         sh_delentry(multi->sockhash, s);
       }
 
@@ -2037,14 +2173,14 @@ static CURLMcode add_next_timeout(struct timeval now,
       break;
     e = n;
   }
-  if(!list->size)  {
+  e = list->head;
+  if(!e) {
     /* clear the expire times within the handles that we remove from the
        splay tree */
     tv->tv_sec = 0;
     tv->tv_usec = 0;
   }
   else {
-    e = list->head;
     /* copy the first entry to 'tv' */
     memcpy(tv, e->ptr, sizeof(*tv));
 
@@ -2109,24 +2245,28 @@ static CURLMcode multi_socket(struct Curl_multi *multi,
          the pipeline. If we should write into the socket, take the send_pipe
          head.  If we should read from the socket, take the recv_pipe head. */
       if(data->set.one_easy->easy_conn) {
-        if ((ev_bitmask & CURL_POLL_OUT) &&
-            data->set.one_easy->easy_conn->send_pipe &&
-            data->set.one_easy->easy_conn->send_pipe->head)
+        if((ev_bitmask & CURL_POLL_OUT) &&
+           data->set.one_easy->easy_conn->send_pipe &&
+           data->set.one_easy->easy_conn->send_pipe->head)
           data = data->set.one_easy->easy_conn->send_pipe->head->ptr;
-        else if ((ev_bitmask & CURL_POLL_IN) &&
-                 data->set.one_easy->easy_conn->recv_pipe &&
-                 data->set.one_easy->easy_conn->recv_pipe->head)
+        else if((ev_bitmask & CURL_POLL_IN) &&
+                data->set.one_easy->easy_conn->recv_pipe &&
+                data->set.one_easy->easy_conn->recv_pipe->head)
           data = data->set.one_easy->easy_conn->recv_pipe->head->ptr;
       }
 
-      if(data->set.one_easy->easy_conn)  /* set socket event bitmask */
+      if(data->set.one_easy->easy_conn &&
+         !(data->set.one_easy->easy_conn->handler->flags & PROTOPT_DIRLOCK))
+        /* set socket event bitmask if they're not locked */
         data->set.one_easy->easy_conn->cselect_bits = ev_bitmask;
 
       do
         result = multi_runsingle(multi, now, data->set.one_easy);
-      while (CURLM_CALL_MULTI_PERFORM == result);
+      while(CURLM_CALL_MULTI_PERFORM == result);
 
-      if(data->set.one_easy->easy_conn)
+      if(data->set.one_easy->easy_conn &&
+         !(data->set.one_easy->easy_conn->handler->flags & PROTOPT_DIRLOCK))
+        /* clear the bitmask only if not locked */
         data->set.one_easy->easy_conn->cselect_bits = 0;
 
       if(CURLM_OK >= result)
@@ -2160,7 +2300,7 @@ static CURLMcode multi_socket(struct Curl_multi *multi,
     if(data) {
       do
         result = multi_runsingle(multi, now, data->set.one_easy);
-      while (CURLM_CALL_MULTI_PERFORM == result);
+      while(CURLM_CALL_MULTI_PERFORM == result);
 
       if(CURLM_OK >= result)
         /* get the socket(s) and check if the state has been changed since
@@ -2204,7 +2344,7 @@ CURLMcode curl_multi_setopt(CURLM *multi_handle,
     multi->socket_userp = va_arg(param, void *);
     break;
   case CURLMOPT_PIPELINING:
-    multi->pipelining_enabled = (bool)(0 != va_arg(param, long));
+    multi->pipelining_enabled = (0 != va_arg(param, long)) ? TRUE : FALSE;
     break;
   case CURLMOPT_TIMERFUNCTION:
     multi->timer_cb = va_arg(param, curl_multi_timer_callback);
@@ -2316,7 +2456,7 @@ static int update_timer(struct Curl_multi *multi)
   if(multi_timeout(multi, &timeout_ms)) {
     return -1;
   }
-  if( timeout_ms < 0 ) {
+  if(timeout_ms < 0) {
     static const struct timeval none={0,0};
     if(Curl_splaycomparekeys(none, multi->timer_lastcall)) {
       multi->timer_lastcall = none;
@@ -2360,12 +2500,14 @@ static CURLcode addHandleToSendOrPendPipeline(struct SessionHandle *handle,
 
   rc = Curl_addHandleToPipeline(handle, pipeline);
 
-  if (pipeline == conn->send_pipe && sendhead != conn->send_pipe->head) {
-      /* this is a new one as head, expire it */
-      conn->writechannel_inuse = FALSE; /* not in use yet */
-      infof(conn->data, "%p is at send pipe head!\n",
-            conn->send_pipe->head->ptr);
-      Curl_expire(conn->send_pipe->head->ptr, 1);
+  if(pipeline == conn->send_pipe && sendhead != conn->send_pipe->head) {
+    /* this is a new one as head, expire it */
+    conn->writechannel_inuse = FALSE; /* not in use yet */
+#ifdef DEBUGBUILD
+    infof(conn->data, "%p is at send pipe head!\n",
+          conn->send_pipe->head->ptr);
+#endif
+    Curl_expire(conn->send_pipe->head->ptr, 1);
   }
 
   return rc;
@@ -2377,7 +2519,7 @@ static int checkPendPipeline(struct connectdata *conn)
   struct curl_llist_element *sendhead = conn->send_pipe->head;
 
   size_t pipeLen = conn->send_pipe->size + conn->recv_pipe->size;
-  if (conn->server_supports_pipelining || pipeLen == 0) {
+  if(conn->server_supports_pipelining || pipeLen == 0) {
     struct curl_llist_element *curr = conn->pend_pipe->head;
     const size_t maxPipeLen =
       conn->server_supports_pipelining ? MAX_PIPELINE_LENGTH : 1;
@@ -2392,14 +2534,16 @@ static int checkPendPipeline(struct connectdata *conn)
     }
   }
 
-  if (result) {
+  if(result) {
     conn->now = Curl_tvnow();
     /* something moved, check for a new send pipeline leader */
     if(sendhead != conn->send_pipe->head) {
       /* this is a new one as head, expire it */
       conn->writechannel_inuse = FALSE; /* not in use yet */
+#ifdef DEBUGBUILD
       infof(conn->data, "%p is at send pipe head!\n",
             conn->send_pipe->head->ptr);
+#endif
       Curl_expire(conn->send_pipe->head->ptr, 1);
     }
   }
@@ -2428,8 +2572,10 @@ static void moveHandleFromSendToRecvPipeline(struct SessionHandle *handle,
         /* Since there's a new easy handle at the start of the send pipeline,
            set its timeout value to 1ms to make it trigger instantly */
         conn->writechannel_inuse = FALSE; /* not used now */
+#ifdef DEBUGBUILD
         infof(conn->data, "%p is at send pipe head B!\n",
               conn->send_pipe->head->ptr);
+#endif
         Curl_expire(conn->send_pipe->head->ptr, 1);
       }
 
@@ -2463,7 +2609,7 @@ static bool isHandleAtHead(struct SessionHandle *handle,
 {
   struct curl_llist_element *curr = pipeline->head;
   if(curr)
-    return (bool)(curr->ptr == handle);
+    return (curr->ptr == handle) ? TRUE : FALSE;
 
   return FALSE;
 }
@@ -2565,7 +2711,9 @@ void Curl_expire(struct SessionHandle *data, long milli)
       while(list->size > 0)
         Curl_llist_remove(list, list->tail, NULL);
 
+#ifdef DEBUGBUILD
       infof(data, "Expire cleared\n");
+#endif
       nowp->tv_sec = 0;
       nowp->tv_usec = 0;
     }
@@ -2662,7 +2810,7 @@ static void multi_connc_remove_handle(struct Curl_multi *multi,
          for nice connection closures".
       */
 
-      if(conn->protocol & PROT_CLOSEACTION) {
+      if(conn->handler->flags & PROTOPT_CLOSEACTION) {
         /* this handle is still being used by a shared connection and
            thus we leave it around for now */
         if(add_closure(multi, data) == CURLM_OK)
@@ -2671,12 +2819,15 @@ static void multi_connc_remove_handle(struct Curl_multi *multi,
           /* out of memory - so much for graceful shutdown */
           Curl_disconnect(conn, /* dead_connection */ FALSE);
           multi->connc->connects[i] = NULL;
+          data->state.shared_conn = NULL;
         }
       }
-      else
+      else {
         /* disconect the easy handle from the connection since the connection
            will now remain but this easy handle is going */
+        data->state.shared_conn = NULL;
         conn->data = NULL;
+      }
     }
   }
 }
@@ -2727,7 +2878,8 @@ static CURLMcode add_closure(struct Curl_multi *multi,
       else
         multi->closure = n;
       free(cl);
-    } else {
+    }
+    else {
       if(cl->easy_handle == data)
         add = FALSE;
 
@@ -2737,7 +2889,7 @@ static CURLMcode add_closure(struct Curl_multi *multi,
     cl = n;
   }
 
-  if (add) {
+  if(add) {
     cl = calloc(1, sizeof(struct closure));
     if(!cl)
       return CURLM_OUT_OF_MEMORY;

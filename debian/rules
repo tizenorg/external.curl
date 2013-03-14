@@ -1,11 +1,11 @@
 #! /usr/bin/make -f
 
 # Uncomment this to turn on verbose mode.
-#export DH_VERBOSE=1
+export DH_VERBOSE=1
 
-## Tizen customization
+## SLP customization
 DEB_BUILD_OPTIONS += nocheck
-# Workaround for broken dpkg-architecture in Tizen's SB1
+# Workaround for broken dpkg-architecture in SLP's SB1
 DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
 
 # This has to be exported to make some magic below work.
@@ -54,7 +54,7 @@ SHLIBS_VERSION=7.16.2-1
 # this will catch miss-linking. (e.g. undefined symbols)
 # LDFLAGS = -Wl,-z,defs
 
-CONFIGURE_ARGS = $(CROSS) --prefix=/usr --mandir=/usr/share/man --disable-dependency-tracking --disable-ipv6 --with-lber-lib=lber --enable-manual --enable-versioned-symbols --enable-ares
+CONFIGURE_ARGS = $(CROSS) --prefix=/usr --mandir=/usr/share/man --disable-dependency-tracking --disable-ipv6 --with-lber-lib=lber --enable-manual --enable-versioned-symbols --enable-ares --enable-debug --enable-curldebug
 # this fixes the ldap warning of dpkg-shlibdebs, but we dont want that.
 # --with-ldap-lib=/usr/lib/libldap_r.so 
 

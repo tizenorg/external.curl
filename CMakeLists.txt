@@ -23,7 +23,6 @@ include(Utilities)
 
 project( CURL C )
 
-
 file (READ ${CURL_SOURCE_DIR}/include/curl/curlver.h CURL_VERSION_H_CONTENTS)
 string (REGEX MATCH "LIBCURL_VERSION_MAJOR[ \t]+([0-9]+)"
   LIBCURL_VERSION_MJ ${CURL_VERSION_H_CONTENTS})
@@ -57,10 +56,6 @@ set(OS "\"${CMAKE_SYSTEM_NAME}\"")
 
 include_directories(${PROJECT_BINARY_DIR}/include/curl)
 include_directories( ${CURL_SOURCE_DIR}/include )
-
-if(WIN32)
-  set(NATIVE_WINDOWS ON)
-endif()
 
 option(BUILD_CURL_EXE "Set to ON to build cURL executable." ON)
 option(BUILD_CURL_TESTS "Set to ON to build cURL tests." ON)
@@ -114,22 +109,11 @@ mark_as_advanced(CURL_DISABLE_HTTP)
 
 option(CURL_DISABLE_LDAPS "to disable LDAPS" OFF)
 mark_as_advanced(CURL_DISABLE_LDAPS)
-if(WIN32)
-  set(CURL_DEFAULT_DISABLE_LDAP OFF)
-  # some windows compilers do not have wldap32
-  if( NOT HAVE_WLDAP32)
-    set(CURL_DISABLE_LDAP ON CACHE BOOL "" FORCE)
-    message(STATUS "wldap32 not found CURL_DISABLE_LDAP set ON")
-    option(CURL_LDAP_WIN "Use Windows LDAP implementation" OFF)
-  else()
-    option(CURL_LDAP_WIN "Use Windows LDAP implementation" ON)
-  endif()
-  mark_as_advanced(CURL_LDAP_WIN)
-endif()
 
 if(HTTP_ONLY)
   set(CURL_DISABLE_FTP ON)
   set(CURL_DISABLE_LDAP ON)
+  set(CURL_DISABLE_LDAPS ON)
   set(CURL_DISABLE_TELNET ON)
   set(CURL_DISABLE_DICT ON)
   set(CURL_DISABLE_FILE ON)
@@ -149,6 +133,8 @@ option(ENABLE_IPV6 "Define if you want to enable IPv6 support" OFF)
 mark_as_advanced(ENABLE_IPV6)
 
 if(WIN32)
+  # Windows standard libraries are located in C:/Program Files/Microsoft SDKs/[...]
+  # They are already included in the default MSVC LIBPATH => no find_library is needed!
   list_spaces_append_once(CMAKE_C_STANDARD_LIBRARIES wsock32.lib ws2_32.lib)  # bufferoverflowu.lib
   if(CURL_DISABLE_LDAP)
     # Remove wldap32.lib from space-separated list
@@ -183,13 +169,7 @@ include (CheckIncludeFile)
 include (CheckIncludeFiles)
 include (CheckLibraryExists)
 include (CheckSymbolExists)
-# if crosscompiling is on, the CHECK_TYPE_SIZE macro coming with cmake uses
-# TRY_COMPILE instead of TRY_RUN which makes crosscompiling easier, Alex
-if(CMAKE_CROSSCOMPILING)
-  include ("${CMAKE_MODULE_PATH}/CheckTypeSize.cmake")
-else(CMAKE_CROSSCOMPILING)
-  include (CheckTypeSize)
-endif(CMAKE_CROSSCOMPILING)
+include (CheckTypeSize)
 
 # On windows preload settings
 if(WIN32)
@@ -197,12 +177,12 @@ if(WIN32)
 endif(WIN32)
 
 # This macro checks if the symbol exists in the library and if it
-# does, it appends library to the list.
+# does, it prepends library to the list.
 macro(CHECK_LIBRARY_EXISTS_CONCAT LIBRARY SYMBOL VARIABLE)
-  check_library_exists("${LIBRARY};${CURL_LIBS}" ${SYMBOL} ""
+  check_library_exists("${LIBRARY};${CURL_LIBS}" ${SYMBOL} "${CMAKE_LIBRARY_PATH}"
     ${VARIABLE})
   if(${VARIABLE})
-    set(CURL_LIBS ${CURL_LIBS} ${LIBRARY})
+    set(CURL_LIBS ${LIBRARY} ${CURL_LIBS})
   endif(${VARIABLE})
 endmacro(CHECK_LIBRARY_EXISTS_CONCAT)
 
@@ -226,28 +206,23 @@ check_library_exists_concat("ws2_32" getch        HAVE_LIBWS2_32)
 check_library_exists_concat("winmm"  getch        HAVE_LIBWINMM)
 check_library_exists("wldap32" cldap_open "" HAVE_WLDAP32)
 
+if(WIN32)
+  set(CURL_DEFAULT_DISABLE_LDAP OFF)
+  # some windows compilers do not have wldap32
+  if(NOT HAVE_WLDAP32)
+    set(CURL_DISABLE_LDAP ON CACHE BOOL "" FORCE)
+    message(STATUS "wldap32 not found CURL_DISABLE_LDAP set ON")
+    option(CURL_LDAP_WIN "Use Windows LDAP implementation" OFF)
+  else()
+    option(CURL_LDAP_WIN "Use Windows LDAP implementation" ON)
+  endif()
+  mark_as_advanced(CURL_LDAP_WIN)
+endif()
+
+
 # IF(NOT CURL_SPECIAL_LIBZ)
 #  CHECK_LIBRARY_EXISTS_CONCAT("z"      inflateEnd   HAVE_LIBZ)
 # ENDIF(NOT CURL_SPECIAL_LIBZ)
-
-option(CMAKE_USE_OPENSSL "Use OpenSSL code. Experimental" ON)
-mark_as_advanced(CMAKE_USE_OPENSSL)
-if(CMAKE_USE_OPENSSL)
-  if(WIN32)
-    find_package(OpenSSL)
-    if(OPENSSL_FOUND)
-      set(USE_SSLEAY TRUE)
-      set(USE_OPENSSL TRUE)
-      list(APPEND CURL_LIBS ${OPENSSL_LIBRARIES} )
-    else()
-      set(CMAKE_USE_OPENSSL FALSE)
-      message(STATUS "OpenSSL NOT Found, disabling CMAKE_USE_OPENSSL")
-    endif()
-  else(WIN32)
-    check_library_exists_concat("crypto" CRYPTO_lock  HAVE_LIBCRYPTO)
-    check_library_exists_concat("ssl"    SSL_connect  HAVE_LIBSSL)
-  endif(WIN32)
-endif(CMAKE_USE_OPENSSL)
 
 # Check for idn
 check_library_exists_concat("idn" idna_to_ascii_lz HAVE_LIBIDN)
@@ -276,6 +251,25 @@ if(CURL_ZLIB)  # AND CURL_CONFIG_HAS_BEEN_RUN_BEFORE
     set(HAVE_LIBZ ON)
   endif()
 endif()
+
+option(CMAKE_USE_OPENSSL "Use OpenSSL code. Experimental" ON)
+mark_as_advanced(CMAKE_USE_OPENSSL)
+if(CMAKE_USE_OPENSSL)
+  if(WIN32)
+    find_package(OpenSSL)
+    if(OPENSSL_FOUND)
+      set(USE_SSLEAY TRUE)
+      set(USE_OPENSSL TRUE)
+      list(APPEND CURL_LIBS ${OPENSSL_LIBRARIES} )
+    else()
+      set(CMAKE_USE_OPENSSL FALSE)
+      message(STATUS "OpenSSL NOT Found, disabling CMAKE_USE_OPENSSL")
+    endif()
+  else(WIN32)
+    check_library_exists_concat("crypto" CRYPTO_lock  HAVE_LIBCRYPTO)
+    check_library_exists_concat("ssl"    SSL_connect  HAVE_LIBSSL)
+  endif(WIN32)
+endif(CMAKE_USE_OPENSSL)
 
 # If we have features.h, then do the _BSD_SOURCE magic
 check_include_file("features.h"       HAVE_FEATURES_H)
@@ -387,11 +381,18 @@ if(CMAKE_USE_OPENSSL)
   check_include_file_concat("openssl/rand.h"   HAVE_OPENSSL_RAND_H)
 endif(CMAKE_USE_OPENSSL)
 
-if(NOT HAVE_LDAP_H) 
+if(NOT HAVE_LDAP_H)
   message(STATUS "LDAP_H not found CURL_DISABLE_LDAP set ON")
   set(CURL_DISABLE_LDAP ON CACHE BOOL "" FORCE)
 endif()
 
+# No ldap, no ldaps.
+if(CURL_DISABLE_LDAP)
+  if(NOT CURL_DISABLE_LDAPS)
+    message(STATUS "LDAP needs to be enabled to support LDAPS")
+    set(CURL_DISABLE_LDAPS ON CACHE BOOL "" FORCE)
+  endif()
+endif()
 
 check_type_size(size_t  SIZEOF_SIZE_T)
 check_type_size(ssize_t  SIZEOF_SSIZE_T)
@@ -431,7 +432,7 @@ if(SIZEOF_LONG EQUAL 8)
   set(CURL_FORMAT_CURL_OFF_TU "lu")
   set(CURL_FORMAT_OFF_T "%ld")
   set(CURL_SUFFIX_CURL_OFF_T L)
-  set(CURL_SUFFIX_CURL_OFF_TU LU)
+  set(CURL_SUFFIX_CURL_OFF_TU UL)
 endif(SIZEOF_LONG EQUAL 8)
 
 if(SIZEOF_LONG_LONG EQUAL 8)
@@ -441,7 +442,7 @@ if(SIZEOF_LONG_LONG EQUAL 8)
   set(CURL_FORMAT_CURL_OFF_TU "llu")
   set(CURL_FORMAT_OFF_T "%lld")
   set(CURL_SUFFIX_CURL_OFF_T LL)
-  set(CURL_SUFFIX_CURL_OFF_TU LLU)
+  set(CURL_SUFFIX_CURL_OFF_TU ULL)
 endif(SIZEOF_LONG_LONG EQUAL 8)
 
 if(NOT CURL_TYPEOF_CURL_OFF_T)
@@ -781,9 +782,15 @@ endif(CMAKE_COMPILER_IS_GNUCC AND APPLE)
 
 if(HAVE_SOCKLEN_T)
   set(CURL_TYPEOF_CURL_SOCKLEN_T "socklen_t")
+  if(WIN32)
+    set(CMAKE_EXTRA_INCLUDE_FILES "winsock2.h;ws2tcpip.h")
+  elseif(HAVE_SYS_SOCKET_H)
+    set(CMAKE_EXTRA_INCLUDE_FILES "sys/socket.h")
+  endif()
   check_type_size("socklen_t" CURL_SIZEOF_CURL_SOCKLEN_T)
+  set(CMAKE_EXTRA_INCLUDE_FILES)
   if(NOT HAVE_CURL_SIZEOF_CURL_SOCKLEN_T)
-    message(FATAL_ERROR 
+    message(FATAL_ERROR
      "Check for sizeof socklen_t failed, see CMakeFiles/CMakerror.log")
   endif()
 else()
@@ -852,3 +859,13 @@ endif()
 if(NOT CURL_CONFIG_HAS_BEEN_RUN_BEFORE)
   set(CURL_CONFIG_HAS_BEEN_RUN_BEFORE 1 CACHE INTERNAL "Flag to track whether this is the first time running CMake or if CMake has been configured before")
 endif()
+
+# Installation.
+# First, install generated curlbuild.h
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/include/curl/curlbuild.h"
+    DESTINATION include/curl )
+# Next, install other headers excluding curlbuild.h
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/curl"
+    DESTINATION include
+    FILES_MATCHING PATTERN "*.h"
+    PATTERN "curlbuild.h" EXCLUDE)

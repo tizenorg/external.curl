@@ -1,12 +1,24 @@
-/*****************************************************************************
+/***************************************************************************
  *                                  _   _ ____  _
  *  Project                     ___| | | |  _ \| |
  *                             / __| | | | |_) | |
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- */
-
+ * Copyright (C) 1998 - 2012, Daniel Stenberg, <daniel@haxx.se>, et al.
+ *
+ * This software is licensed as described in the file COPYING, which
+ * you should have received as part of this distribution. The terms
+ * are also available at http://curl.haxx.se/docs/copyright.html.
+ *
+ * You may opt to use, copy, modify, merge, publish, distribute and/or sell
+ * copies of the Software, and permit persons to whom the Software is
+ * furnished to do so, under the terms of the COPYING file.
+ *
+ * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+ * KIND, either express or implied.
+ *
+ ***************************************************************************/
 #include <stdio.h>
 #include <fcntl.h>
 #ifdef WIN32
@@ -14,9 +26,8 @@
 #else
 #  ifdef __VMS
      typedef int intptr_t;
-#  else
-#    include <stdint.h>
 #  endif
+#  include <stdint.h>
 #  include <unistd.h>
 #endif
 #include <sys/types.h>
@@ -77,12 +88,16 @@ static curlioerr my_ioctl(CURL *handle, curliocmd cmd, void *userp)
 static size_t read_callback(void *ptr, size_t size, size_t nmemb, void *stream)
 {
   size_t retcode;
+  curl_off_t nread;
 
   intptr_t fd = (intptr_t)stream;
 
   retcode = read(fd, ptr, size * nmemb);
 
-  fprintf(stderr, "*** We read %d bytes from file\n", retcode);
+  nread = (curl_off_t)retcode;
+
+  fprintf(stderr, "*** We read %" CURL_FORMAT_CURL_OFF_T
+          " bytes from file\n", nread);
 
   return retcode;
 }
@@ -147,6 +162,10 @@ int main(int argc, char **argv)
 
     /* Now run off and do what you've been told! */
     res = curl_easy_perform(curl);
+    /* Check for errors */
+    if(res != CURLE_OK)
+      fprintf(stderr, "curl_easy_perform() failed: %s\n",
+              curl_easy_strerror(res));
 
     /* always cleanup */
     curl_easy_cleanup(curl);
