@@ -8,6 +8,8 @@ License:    MIT
 #Source0:    http://curl.haxx.se/download/%{name}-%{version}.tar.bz2
 Source0:    %{name}-%{version}.tar.gz
 
+Patch01: tizen_fix_buffer_overflow.patch
+
 BuildRequires:  pkgconfig(openssl)
 BuildRequires:  pkgconfig(libidn)
 BuildRequires:  pkgconfig(zlib)
@@ -54,6 +56,7 @@ use cURL's capabilities internally.
 %prep
 %setup -q
 
+%patch01 -p1
 
 %build
 
