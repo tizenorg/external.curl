@@ -104,6 +104,7 @@ rm -rf ${RPM_BUILD_ROOT}/usr/share/man
 %{_bindir}/curl
 
 %files -n libcurl
+%manifest libcurl.manifest
 %{_libdir}/libcurl.so.*
 
 %files -n libcurl-devel
