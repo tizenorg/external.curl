@@ -1,14 +1,15 @@
 Name:       curl
 Summary:    A utility for getting files from remote servers (FTP, HTTP, and others)
 Version:    7.28.1
-Release:    1
+Release:    2
 Group:      Applications/Internet
 License:    MIT
 #URL:        http://curl.haxx.se/
 #Source0:    http://curl.haxx.se/download/%{name}-%{version}.tar.bz2
 Source0:    %{name}-%{version}.tar.gz
 
-Patch01: tizen_fix_buffer_overflow.patch
+Patch01: curl-CVE-2013-0249.patch
+Patch02: curl-CVE-2013-1944.patch
 
 BuildRequires:  pkgconfig(openssl)
 BuildRequires:  pkgconfig(libidn)
@@ -57,6 +58,7 @@ use cURL's capabilities internally.
 %setup -q
 
 %patch01 -p1
+%patch02 -p1
 
 %build
 

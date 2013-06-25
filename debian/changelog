@@ -1,3 +1,12 @@
+curl (7.28.1-2) unstable; urgency=low
+
+  * Fixed CVE-2013-1944 
+  * This flaw allows remote attackers to steal cookies via a matching suffix in the domain of a URL
+  * Git: external/curl
+  * Tag: curl_7.28.1-2 
+
+ -- GangHeok Kim <gangheok.kim@samsung.com>  Tue, 25 Jun 2013 12:12:50 +0900
+
 curl (7.28.1-1) unstable; urgency=low
 
   * Upgraded version to 7.28.1
