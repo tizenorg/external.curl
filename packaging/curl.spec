@@ -83,10 +83,6 @@ sed -i \
 make %{?_smp_mflags}
 
 %install
-rm -rf %{buildroot}
-
-rm -rf $RPM_BUILD_ROOT
-
 make DESTDIR=$RPM_BUILD_ROOT INSTALL="%{__install} -p" install
 
 rm -f ${RPM_BUILD_ROOT}%{_libdir}/libcurl.la
@@ -98,15 +94,21 @@ install -m 644 docs/libcurl/libcurl.m4 $RPM_BUILD_ROOT/%{_datadir}/aclocal
 find ${RPM_BUILD_ROOT} -name ca-bundle.crt -exec rm -f '{}' \;
 rm -rf ${RPM_BUILD_ROOT}/usr/share/man
 
+mkdir -p %{buildroot}/usr/share/license
+cp %{_builddir}/%{buildsubdir}/COPYING %{buildroot}/usr/share/license/%{name}
+cp %{_builddir}/%{buildsubdir}/COPYING %{buildroot}/usr/share/license/libcurl
+
 %post -n libcurl -p /sbin/ldconfig
 
 %postun -n libcurl -p /sbin/ldconfig
 
 %files
+/usr/share/license/%{name}
 %{_bindir}/curl
 
 %files -n libcurl
 %manifest libcurl.manifest
+/usr/share/license/libcurl
 %{_libdir}/libcurl.so.*
 
 %files -n libcurl-devel
