@@ -1,16 +1,15 @@
 Name:       curl
 Summary:    A utility for getting files from remote servers (FTP, HTTP, and others)
-Version:    7.21.3
-Release:    7
+Version:    7.40.1_2
+Release:    1
 Group:      Applications/Internet
 License:    MIT
 #URL:        http://curl.haxx.se/
 #Source0:    http://curl.haxx.se/download/%{name}-%{version}.tar.bz2
-Source0:    %{name}-%{version}.tar.bz2
+Source0:    %{name}-%{version}.tar.gz
 
 BuildRequires:  pkgconfig(openssl)
 BuildRequires:  pkgconfig(libidn)
-BuildRequires:  pkgconfig(nss)
 BuildRequires:  pkgconfig(zlib)
 BuildRequires:  pkgconfig(libcares)
 Provides:   webclient
@@ -55,17 +54,19 @@ use cURL's capabilities internally.
 %prep
 %setup -q
 
+#%patch01 -p1
+#%patch02 -p1
 
 %build
 
-export CPPFLAGS="$(pkg-config --cflags nss) -DHAVE_PK11_CREATEGENERICOBJECT"
+export CPPFLAGS="-DHAVE_PK11_CREATEGENERICOBJECT"
 
-%reconfigure --without-nss --without-gnutls --with-openssl --disable-ipv6 \
+%reconfigure --without-nss --without-gnutls --with-openssl --enable-ipv6 \
 --with-ca-path=/etc/ssl/certs \
 --with-libidn \
 --with-lber-lib=lber \
 --enable-manual --enable-versioned-symbols --enable-ares --enable-debug --enable-curldebug \
---disable-static
+--disable-static \
 
 #--with-ca-bundle=%{_sysconfdir}/pki/tls/certs/ca-bundle.crt 
 
@@ -94,6 +95,11 @@ install -m 644 docs/libcurl/libcurl.m4 $RPM_BUILD_ROOT/%{_datadir}/aclocal
 find ${RPM_BUILD_ROOT} -name ca-bundle.crt -exec rm -f '{}' \;
 rm -rf ${RPM_BUILD_ROOT}/usr/share/man
 
+# LICENSE
+rm -rf %{buildroot}/usr/share/license
+mkdir -p %{buildroot}/usr/share/license
+cp COPYING %{buildroot}/usr/share/license/%{name}
+
 %post -n libcurl -p /sbin/ldconfig
 
 %postun -n libcurl -p /sbin/ldconfig
@@ -102,7 +108,9 @@ rm -rf ${RPM_BUILD_ROOT}/usr/share/man
 %{_bindir}/curl
 
 %files -n libcurl
+%manifest %{name}.manifest
 %{_libdir}/libcurl.so.*
+/usr/share/license/%{name}
 
 %files -n libcurl-devel
 %{_bindir}/curl-config*
