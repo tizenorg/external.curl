@@ -1,6 +1,6 @@
 Name:       curl
 Summary:    A utility for getting files from remote servers (FTP, HTTP, and others)
-Version:    7.40.1_2
+Version:    7.40.1_6
 Release:    1
 Group:      Applications/Internet
 License:    MIT
@@ -12,6 +12,7 @@ BuildRequires:  pkgconfig(openssl)
 BuildRequires:  pkgconfig(libidn)
 BuildRequires:  pkgconfig(zlib)
 BuildRequires:  pkgconfig(libcares)
+BuildRequires:	pkgconfig(libnghttp2)
 Provides:   webclient
 
 
@@ -27,6 +28,7 @@ user authentication, FTP upload, HTTP post, and file transfer resume.
 %package -n libcurl
 Summary:    A library for getting files from web servers
 Group:      System/Libraries
+License:    MIT
 Requires(post): /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
 
@@ -38,6 +40,7 @@ other servers for getting files.
 %package -n libcurl-devel
 Summary:    Files needed for building applications with libcurl
 Group:      Development/Libraries
+License:    MIT
 Requires:   libcurl = %{version}-%{release}
 Requires:   libidn-devel
 Provides:   curl-devel = %{version}-%{release}
@@ -67,6 +70,7 @@ export CPPFLAGS="-DHAVE_PK11_CREATEGENERICOBJECT"
 --with-lber-lib=lber \
 --enable-manual --enable-versioned-symbols --enable-ares --enable-debug --enable-curldebug \
 --disable-static \
+--with-nghttp2=/usr/lib/pkgconfig \
 
 #--with-ca-bundle=%{_sysconfdir}/pki/tls/certs/ca-bundle.crt 
 

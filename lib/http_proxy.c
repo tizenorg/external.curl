@@ -193,7 +193,7 @@ CURLcode Curl_proxyCONNECT(struct connectdata *conn,
                            useragent,
                            proxyconn);
 
-        if(host && *host)
+        if(host)
           free(host);
         free(hostheader);
 
